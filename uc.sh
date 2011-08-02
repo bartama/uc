@@ -154,9 +154,9 @@ _u_() # {{{
       *) return 1;
    esac
 
-   [ "$($MOUNT | grep $DIR)"x != x ] && $UMOUNT $DIR
+   [ "$($MOUNT | grep $DIR)"x != x ] && sync && $UMOUNT $DIR
    DEV=$($MDC -lv | grep $IMG)
-   [ "$DEV"x != x ] && $MDC -d -u $(echo "$DEV" | cut -f 1)
+   [ "$DEV"x != x ] && sync && $MDC -d -u $(echo "$DEV" | cut -f 1)
    return 0
 }
 # }}}
@@ -189,7 +189,7 @@ where OPTIONS := {
                    bw                           // build world
                    ik DEST_DIR                  // install kernel
                    iw DEST_DIR                  // install world
-                   ib DEST_DIR SRC_DIR CFG_DIR // install boot
+                   im DEST_DIR SRC_DIR CFG_DIR // install boot, mfsroot and usr
                    ip DEST_DIR                  // install packages
                  }
 EOF
@@ -199,7 +199,39 @@ EOF
 _upper_() # {{{
 {
    [ $# -gt 0 ] || return 1
-   echo "$@" | tr '[:lower:]' '[:upper:]'
+   echo $* | tr '[:lower:]' '[:upper:]'
+   return 0
+} # }}}
+
+###############################################################################
+_copy_() # {{{
+{
+   local SRC DST EXCLUDE COUNT
+   #
+   # copy directory using tar 
+   # $1 - source directory
+   # $2 - destination directory
+   # $3,..,$n - exclude patterns
+   [ $# -ge 2 ] || return 1
+   SRC=$1 ; DST=$2 ; shift 2
+   EXCLUDE=
+   COUNT=0
+
+   [ -d $SRC ] && [ -d $DST ] || return 1
+
+   for i in $* ; do
+      if [ "$i"x != x ] ; then
+	 [ $COUNT -eq 0 ] && EXCLUDE="( -type d -name $i )" || EXCLUDE="$EXCLUDE -or ( -type d -name $i )"
+      fi
+      COUNT=$(($COUNT+1))
+   done
+
+   echo "'*~'" > $WORK_DIR/exclude.$$
+   cd $SRC && find ./ -type d $EXCLUDE >> $WORK_DIR/exclude.$$
+
+   tar -C $SRC -X $WORK_DIR/exclude.$$ -cf - . | tar -C $DST -tvf -
+   #[ -f $WORK_DIR/exclude.$$ ] && rm -f $WORK_DIR/exclude.$$ 
+   return 0
 } # }}}
 
 ###############################################################################
@@ -511,61 +543,83 @@ _install_world_() # {{{
 } # }}}
 
 ###############################################################################
-_install_boot_ () # {{{
+_install_mfsroot_ () # {{{
 {
-   local DST SRC CFG MFS YESNO MDEV
+   local DST SRC CFG MFS ERU MDEV ALL UPCFG
    # parameters
    # $1 - target dir
    # $2 - source dir
    # $3 - CFG directory 
-   [ $# -eq 3 ] || return 1
+   # $4 - all = install all, optional
+   [ $# -ge 3 ] && [ $# -le 4 ] || return 1
    [ -d $DST ] && [ -d $SRC ] && [ -d $CFG ] || exit 1
    #
    DST=$1
    SRC=$2
    CFG=$3
-   # install kernel
-   #cp -pvr $SRC/boot $DST/boot
-   #[ -e $DST/boot/kernel/kernel.gz ] || $ZIP -9 ${DST}/boot/kernel/kernel
-   #cp -prv $CFG/boot $DST/
+   ALL=${4:-}
+   UPCFG=
+   # install boot and usr
+   if [ "$ALL" = "all" ] ; then
+      _copy_ $SRC/boot $DST/boot
+      [ -e $DST/boot/kernel/kernel.gz ] || $ZIP -9 ${DST}/boot/kernel/kernel
+      #
+      # usr
+      [ -d $DST/usr ] || mkdir $DST/usr
+      _copy_ $SRC/usr $DST/usr 'include' 'src' 'example*' 'man' 'nls' 'info'\
+	 'i18n' 'doc' 'locale' 'zoneinfo'
+   fi
+   _copy_ $CFG/boot $DST/boot
+   _copy_ $CFG/usr $DST/usr
    #
    ##### create mfsroot #####
    #
    # erase existing
    MFS=$WORK_DIR/mfsroot
    if [ -f $MFS ] ; then 
-      echo -n "Rewrite existing mfsroot image: \"$MFS\" [y/N]? "
-      read YESNO
-      [ $(_upper_ $YESNO) != "Y" ] && return 0
+      echo -n "e(x)it/(r)ewrite/(u)pdate existing mfsroot image: \"$MFS\" [x/r/u]? "
+      read ERU
+      case "$(_upper_ $ERU)" in
+	 X) return 0 ;;
+	 R) [ -e $MFS ] && rm -f $MFS ;;
+	 U) UPCFG=yes ;;
+	 *) return 0 ;;
+      esac
    fi
-   [ -e $MFS ] && rm -f $MFS
    #
    # create new image
-   dd if=/dev/zero of=$MFS bs=1024k count=32
+   [ -z $UPCFG ] && dd if=/dev/zero of=$MFS bs=1024k count=32
+
    MDEV=$($MDC -a -f $MFS)
    [ $? -eq 0 ] || return 1
    #
    # create file system
-   $NEWFS /dev/$MDEV
-   [ $? -eq 1 ] && $MDC -d -u $MDEV && return 1
+   if [ -z $UPCFG ] ; then
+      $NEWFS /dev/$MDEV
+      [ $? -eq 1 ] && $MDC -d -u $MDEV && return 1
+   fi
    [ -d $WORK_DIR/$MDEV ] || mkdir $WORK_DIR/$MDEV
    #
    # mount the image
    $MOUNT /dev/$MDEV $WORK_DIR/$MDEV
    #
    # install mfsroot
-   tar --exclude 'boot/*' --exclude 'mnt/*' --exclude 'rescue/*' \
-       --exclude 'usr/*' --exclude 'var/*' -C $SRC \
-       -cf - ./ | tar -C $WORK_DIR/$MDEV -xvf -
+   if [ -z $UPCFG ] ; then
+      _copy_ $SRC $WORK_DIR/$MDEV 'boot' 'mnt' 'rescue' 'usr' 'var' 'tmp'
+      #
+      # install configuration
+      for i in "usb" "var" "usr" "boot" ; do
+	 [ -d $WORK_DIR/$MDEV/$i ] || mkdir $WORK_DIR/$MDEV/$i
+      done
+      cd $WORK_DIR
+      rm -fr tmp && ln -s var/tmp tmp
+      cd -
+   fi
    #
-   # install configuration
-   [ -d $WORK_DIR/$MDEV/usb ] || mkdir $WORK_DIR/$MDEV/usb
-   [ -d $WORK_DIR/$MDEV/var ] || mkdir $WORK_DIR/$MDEV/var
-   [ -d $WORK_DIR/$MDEV/usr ] || mkdir $WORK_DIR/$MDEV/usr
+   # copy etc into mfsroot
+   _copy_ $CFG/etc $WORK_DIR/$MDEV/etc
    #
-   cp -prv $CFG/etc $WORK_DIR/$MDEV/
-   #
-   sleep 1
+   sync
    $UMOUNT $WORK_DIR/$MDEV
    $MDC -d -u $MDEV
    $ZIP -9 -c $MFS > $DST/boot/mfsroot.gz
@@ -616,7 +670,7 @@ _main_() # {{{
       bw)   _build_world_         $TARGET          ;;
       ik)   _install_kernel_      $TARGET $KERN $* ;;
       iw)   _install_world_       $TARGET       $* ;;
-      ib)   _install_boot_                      $* ;; 
+      im)   _install_mfsroot_                   $* ;; 
       ip)   _install_packages_                  $* ;;
       *)    _help_ ;;
 
