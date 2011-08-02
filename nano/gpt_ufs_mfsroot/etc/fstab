@@ -1,0 +1,4 @@
+/dev/md0       /	ufs	 rw	     0	   0
+/dev/ad0p2     /usb	ufs      ro	     2     0
+md	       /var     mfs      rw,-s64m    2     0
+/usb/usr       /usr	nullfs   rw	     2	   0
