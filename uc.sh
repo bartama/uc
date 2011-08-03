@@ -206,7 +206,7 @@ _upper_() # {{{
 ###############################################################################
 _copy_() # {{{
 {
-   local SRC DST EXCLUDE COUNT
+   local SRC DST EXFILE COUNT
    #
    # copy directory using tar 
    # $1 - source directory
@@ -214,22 +214,18 @@ _copy_() # {{{
    # $3,..,$n - exclude patterns
    [ $# -ge 2 ] || return 1
    SRC=$1 ; DST=$2 ; shift 2
-   EXCLUDE=
-   COUNT=0
+   EXFILE=$WORK_DIR/exclude.$$
 
-   [ -d $SRC ] && [ -d $DST ] || return 1
+   [ -d $SRC ] || return 1
+   [ -d $DST ] || mkdir -p $DST
 
+   echo '*~' > $EXFILE
    for i in $* ; do
-      if [ "$i"x != x ] ; then
-	 [ $COUNT -eq 0 ] && EXCLUDE="( -type d -name $i )" || EXCLUDE="$EXCLUDE -or ( -type d -name $i )"
-      fi
-      COUNT=$(($COUNT+1))
+      [ "$i"x != x ] && echo $i/ >> $EXFILE
    done
-
-   echo "'*~'" > $WORK_DIR/exclude.$$
-   cd $SRC && find ./ -type d $EXCLUDE >> $WORK_DIR/exclude.$$
-
-   tar -C $SRC -X $WORK_DIR/exclude.$$ -cf - . | tar -C $DST -tvf -
+   
+   rsync -avz --exclude-from=$EXFILE $SRC/ $DST
+   #tar -C $SRC -X $EXFILE -cf - ./ | tar -C $DST -tvf - > /tmp/dst.lst
    #[ -f $WORK_DIR/exclude.$$ ] && rm -f $WORK_DIR/exclude.$$ 
    return 0
 } # }}}
@@ -563,9 +559,9 @@ _install_mfsroot_ () # {{{
    if [ "$ALL" = "all" ] ; then
       _copy_ $SRC/boot $DST/boot
       [ -e $DST/boot/kernel/kernel.gz ] || $ZIP -9 ${DST}/boot/kernel/kernel
+      [ -e $DST/boot/kernel/kernel ] && rm -f ${DST}/boot/kernel/kernel
       #
       # usr
-      [ -d $DST/usr ] || mkdir $DST/usr
       _copy_ $SRC/usr $DST/usr 'include' 'src' 'example*' 'man' 'nls' 'info'\
 	 'i18n' 'doc' 'locale' 'zoneinfo'
    fi
@@ -611,8 +607,8 @@ _install_mfsroot_ () # {{{
       for i in "usb" "var" "usr" "boot" ; do
 	 [ -d $WORK_DIR/$MDEV/$i ] || mkdir $WORK_DIR/$MDEV/$i
       done
-      cd $WORK_DIR
-      rm -fr tmp && ln -s var/tmp tmp
+      cd $WORK_DIR/$MDEV
+      rm -fr tmp ; ln -s var/tmp tmp
       cd -
    fi
    #
