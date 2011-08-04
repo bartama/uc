@@ -3,4 +3,4 @@
 # prepare named configuration
 # 
 cp -fr /cfg/named/* /var/named/etc/namedb/
-/etc/rc.d/named restart
+/etc/rc.d/named onestart

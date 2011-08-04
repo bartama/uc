@@ -15,7 +15,8 @@ MODULES="msdosfs pseudofs procfs nullfs linux ppc ppbus ppi if_vlan if_tun md \
 PACKAGES="hal dbus xorg-minimal xf86-video-vesa xf86-input-mouse \
   xf86-input-keyboard xf86-video-intel xorg-server xorg-fonts-100dpi \
   xorg-fonts-75dpi xorg-fonts-truetype xorg-fonts-type1 urwfonts urwfonts-ttf \
-  xdm xkbcomp xsm openbox rxvt-unicode midori thttpd openjdk6 freenx"
+  xdm xkbcomp xsm openbox rxvt-unicode midori thttpd openjdk6 freenx \
+  isc-dhcp41-server"
 
 
 ZIP=gzip
@@ -225,8 +226,7 @@ _copy_() # {{{
    done
    
    rsync -avz --exclude-from=$EXFILE $SRC/ $DST
-   #tar -C $SRC -X $EXFILE -cf - ./ | tar -C $DST -tvf - > /tmp/dst.lst
-   #[ -f $WORK_DIR/exclude.$$ ] && rm -f $WORK_DIR/exclude.$$ 
+   [ -f $WORK_DIR/exclude.$$ ] && rm -f $WORK_DIR/exclude.$$ 
    return 0
 } # }}}
 
@@ -567,6 +567,7 @@ _install_mfsroot_ () # {{{
    fi
    _copy_ $CFG/boot $DST/boot
    _copy_ $CFG/usr $DST/usr
+   chown -R root:wheel $DST/boot $DST/usr
    #
    ##### create mfsroot #####
    #
@@ -614,6 +615,8 @@ _install_mfsroot_ () # {{{
    #
    # copy etc into mfsroot
    _copy_ $CFG/etc $WORK_DIR/$MDEV/etc
+   _copy_ $CFG/cfg $WORK_DIR/$MDEV/cfg
+   chown -R root:wheel $WORK_DIR/$MDEV/etc $WORK_DIR/$MDEV/cfg
    #
    sync
    $UMOUNT $WORK_DIR/$MDEV
