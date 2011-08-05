@@ -179,7 +179,7 @@ where OPTIONS := {
 		                      Working directory
                    -r ROOT_DIR        [ $ROOT_DIR ]
 				      Root directory
-                   -p PROXY           specify http proxy to use
+                   -p PROXY           HTTP proxy to use
                    -t                 Use tsocks
 		   -P PACKAGE_ROOT    [ $PKGROOT ]
 		   -R RELEASE         [ $RELEASE ]
