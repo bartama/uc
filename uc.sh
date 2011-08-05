@@ -6,6 +6,8 @@ set -x
 # defaults
 #
 TARGET=amd64
+PKGROOT="http://ftp.cz.freebsd.org"
+RELEASE="packages-8-stable"
 KERN=NANO
 MODULES="msdosfs pseudofs procfs nullfs linux ppc ppbus ppi if_vlan if_tun md \
    if_gif if_faith usb/uhid geom/geom_uzip geom/geom_part/geom_part_gpt \
@@ -640,8 +642,8 @@ _install_packages_() # {{{
    CHROOT=$2
 
    for pkg in $PACKAGES ; do
-      $TSOCKS env PACKAGEROOT=http://ftp.cz.freebsd.org HTTP_PROXY=$PROXY \
-         pkg_add -a $ARCH -r -C $CHROOT $pkg
+      $TSOCKS env PACKAGESITE=$PKGROOT/pub/FreeBSD/ports/$TARGET/$RELEASE/Latest\
+	 HTTP_PROXY=$PROXY pkg_add -r -C $CHROOT $pkg
       sleep 1
    done
    #
