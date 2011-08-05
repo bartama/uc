@@ -34,7 +34,7 @@ ZFS=/sbin/zfs
 TSOCKS=
 PROXY=
 
-ROOT_DIR=/home/test
+ROOT_DIR=$PWD
 WORK_DIR=/tmp
 USB_IMG=usb.img
 USB_DIR=usb
@@ -171,12 +171,18 @@ _help_() # {{{
 $0 { OPTIONS } [ CMD ] [ CMD_ARGS ]
 where OPTIONS := { 
                    -h help
-                   -a TARGET_ARCH     [ amd64 ] // targe architecture
-                   -k KERNEL          [  NANO ] // kernel configuration
-                   -w WORK_DIR        [  /tmp ] // specify work directory
-                   -r ROOT_DIR                  // specify root directory
-                   -p PROXY                     // specify http proxy to use
-                   -t                           // use tsocks
+                   -a TARGET_ARCH     [ $TARGET ] 
+				      Targe architecture
+                   -k KERNEL          [ $KERN ] 
+		                      Kernel configuration file
+                   -w WORK_DIR        [ $WORK_DIR ] 
+		                      Working directory
+                   -r ROOT_DIR        [ $ROOT_DIR ]
+				      Root directory
+                   -p PROXY           specify http proxy to use
+                   -t                 Use tsocks
+		   -P PACKAGE_ROOT    [ $PKGROOT ]
+		   -R RELEASE         [ $RELEASE ]
                  }
       CMD     := { 
                    m  IMG_FILE [ PARTITION ]    // mount partition from image 
@@ -692,6 +698,8 @@ while [ "$(echo $1|cut -c1)" = "-" ] ; do
       -r) ROOT_DIR=$2 ; echo "Root dir=\"$ROOT_DIR\"" ; shift 2 ;;
       -p) PROXY=$2 ; echo "HTTP Proxy=\"$PROXY\"" ; shift 2 ;;
       -t) TSOCKS=$(which tsocks) ; shift 1 ;;
+      -P) PKGROOT=$2 ; echo "Packages Root=\"$PKGROOT\"" ; shift 2 ;;
+      -R) RELEASE=$2 ; echo "Packages Release=\"$RELEASE\"" ; shift 2 ;;
       *) echo "Unknown option $1" ; break ;;
    esac
 done
