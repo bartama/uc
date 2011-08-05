@@ -190,7 +190,7 @@ where OPTIONS := {
                    bw                           // build world
                    ik DEST_DIR                  // install kernel
                    iw DEST_DIR                  // install world
-                   im DEST_DIR SRC_DIR CFG_DIR // install boot, mfsroot and usr
+                   im SRC_DIR DST_DIR CFG_DIR   // install boot, mfsroot and usr
                    ip DEST_DIR                  // install packages
                  }
 EOF
@@ -543,18 +543,19 @@ _install_mfsroot_ () # {{{
 {
    local DST SRC CFG MFS ERU MDEV ALL UPCFG
    # parameters
-   # $1 - target dir
-   # $2 - source dir
+   # $1 - source dir
+   # $2 - target dir
    # $3 - CFG directory 
    # $4 - all = install all, optional
    [ $# -ge 3 ] && [ $# -le 4 ] || return 1
-   [ -d $DST ] && [ -d $SRC ] && [ -d $CFG ] || exit 1
    #
-   DST=$1
-   SRC=$2
+   SRC=$1
+   DST=$2
    CFG=$3
    ALL=${4:-}
    UPCFG=
+   [ -d $SRC ] && [ -d $CFG ] || exit 1
+   [ -d $DST ] || mkdir -p $DST
    # install boot and usr
    if [ "$ALL" = "all" ] ; then
       _copy_ $SRC/boot $DST/boot
