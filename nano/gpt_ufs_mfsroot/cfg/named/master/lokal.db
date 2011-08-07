@@ -22,6 +22,8 @@ ns              IN      A       192.168.88.2
 mx              IN      A       192.168.88.2
 mail            IN      A       192.168.88.2
 gw              IN      A       192.168.88.254
+switch          IN      A       192.168.88.1
 
 ; Aliases
 www             IN      CNAME   lokal.
+nano            IN      CNAME   ns.lokal.
