@@ -10,16 +10,17 @@ PKGROOT="http://ftp.cz.freebsd.org"
 RELEASE="packages-8-stable"
 KERN=NANO
 MODULES="msdosfs pseudofs procfs nullfs linux ppc ppbus ppi if_vlan if_tun md \
-   if_gif if_faith usb/uhid geom/geom_uzip geom/geom_part/geom_part_gpt \
-   vesa zlib wlan_wep wlan_ccmp wlan_tkip wlan_amrr wlan_xauth usb/u3g \
-   usb/uhso ath if_bridge bridgestp drm geom/geom_mirror"
+   if_gif if_faith usb/uhid geom/geom_uzip geom/geom_label \
+   geom/geom_part/geom_part_gpt vesa zlib wlan_wep wlan_ccmp wlan_tkip \
+   wlan_amrr wlan_xauth usb/u3g usb/uhso ath if_bridge bridgestp"
 
-PACKAGES="hal dbus xorg-minimal xf86-video-vesa xf86-input-mouse \
-  xf86-input-keyboard xf86-video-intel xorg-server xorg-fonts-100dpi \
-  xorg-fonts-75dpi xorg-fonts-truetype xorg-fonts-type1 urwfonts urwfonts-ttf \
-  xdm xkbcomp xsm openbox rxvt-unicode midori thttpd openjdk6 freenx \
-  isc-dhcp41-server"
+#PACKAGES="hal dbus xorg-minimal xf86-video-vesa xf86-input-mouse \
+#  xf86-input-keyboard xf86-video-intel xorg-server xorg-fonts-100dpi \
+#  xorg-fonts-75dpi xorg-fonts-truetype xorg-fonts-type1 urwfonts urwfonts-ttf \
+#  xdm xkbcomp xsm openbox rxvt-unicode midori thttpd openjdk6 freenx \
+#  isc-dhcp41-server"
 
+PACKAGES=isc-dhcp42-server
 
 ZIP=gzip
 MOUNT=/sbin/mount
@@ -186,7 +187,7 @@ where OPTIONS := {
                  }
       CMD     := { 
                    m  IMG_FILE [ PARTITION ]    // mount partition from image 
-                   m  DEV			// umount 
+                   u  DEV			// umount 
 		   p  DEV MBR_FS { ARGS }       // prepare disk 
 		   pi IMG MBR_FS { ARGS }       // prepare disk image
 		      MBR:= { mbr | gpt }
@@ -637,26 +638,25 @@ _install_mfsroot_ () # {{{
 ###############################################################################
 _install_packages_() # {{{
 {
-   local ARCH CHROOT
+   local CHROOT HTTP_PROXY
    #
    # install base packages
-   # $1 - target architecture
-   # $2 - root directory to install to
+   # $1 - root directory to install to
 
-   [ $# -eq 2 ] || return 1
-   ARCH=$1
-   CHROOT=$2
+   [ $# -eq 1 ] || return 1
+   CHROOT=$1
+   [ "$PROXY"x != x ] && HTTP_PROXY="HTTP_PROXY=$PROXY"
 
    for pkg in $PACKAGES ; do
       $TSOCKS env PACKAGESITE=$PKGROOT/pub/FreeBSD/ports/$TARGET/$RELEASE/Latest\
-	 HTTP_PROXY=$PROXY pkg_add -r -C $CHROOT $pkg
+	 $HTTP_PROXY pkg_add -r -C $CHROOT $pkg
       sleep 1
    done
    #
    # jdownloader
    #
 
-   $TSOCKS env HTTP_PROXY=$PROXY fetch -o ${CHROOT}/usr/local/sbin/jd.sh \
+   $TSOCKS env $HTTP_PROXY fetch -o ${CHROOT}/usr/local/sbin/jd.sh \
       http://212.117.163.148/jd.sh
    chmod +x ${CHROOT}/usr/local/sbin/jd.sh
    return 0
