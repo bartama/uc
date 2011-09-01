@@ -101,6 +101,7 @@ _mount_image_() # {{{
    DEV=$($MDC -a -f $IMG)
    [ $? -eq 0 ] || return 1
    #
+	sleep 1
    case $TYPE in
       UFS)
          [ -d $WORK_DIR/$DEV ] || mkdir $WORK_DIR/$DEV
