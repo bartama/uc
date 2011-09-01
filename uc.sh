@@ -6,6 +6,8 @@ set -x
 # defaults
 #
 TARGET=amd64
+PKGROOT="http://ftp.cz.freebsd.org"
+RELEASE="packages-8-stable"
 KERN=NANO
 MODULES="msdosfs pseudofs procfs nullfs linux ppc ppbus ppi if_vlan if_tun md \
    if_gif if_faith usb/uhid geom/geom_uzip geom/geom_part/geom_part_gpt \
@@ -15,7 +17,8 @@ MODULES="msdosfs pseudofs procfs nullfs linux ppc ppbus ppi if_vlan if_tun md \
 PACKAGES="hal dbus xorg-minimal xf86-video-vesa xf86-input-mouse \
   xf86-input-keyboard xf86-video-intel xorg-server xorg-fonts-100dpi \
   xorg-fonts-75dpi xorg-fonts-truetype xorg-fonts-type1 urwfonts urwfonts-ttf \
-  xdm xkbcomp xsm openbox rxvt-unicode midori thttpd openjdk6 freenx"
+  xdm xkbcomp xsm openbox rxvt-unicode midori thttpd openjdk6 freenx \
+  isc-dhcp41-server"
 
 
 ZIP=gzip
@@ -31,7 +34,7 @@ ZFS=/sbin/zfs
 TSOCKS=
 PROXY=
 
-ROOT_DIR=/home/test
+ROOT_DIR=$PWD
 WORK_DIR=/tmp
 USB_IMG=usb.img
 USB_DIR=usb
@@ -168,12 +171,18 @@ _help_() # {{{
 $0 { OPTIONS } [ CMD ] [ CMD_ARGS ]
 where OPTIONS := { 
                    -h help
-                   -a TARGET_ARCH     [ amd64 ] // targe architecture
-                   -k KERNEL          [  NANO ] // kernel configuration
-                   -w WORK_DIR        [  /tmp ] // specify work directory
-                   -r ROOT_DIR                  // specify root directory
-                   -p PROXY                     // specify http proxy to use
-                   -t                           // use tsocks
+                   -a TARGET_ARCH     [ $TARGET ] 
+				      Targe architecture
+                   -k KERNEL          [ $KERN ] 
+		                      Kernel configuration file
+                   -w WORK_DIR        [ $WORK_DIR ] 
+		                      Working directory
+                   -r ROOT_DIR        [ $ROOT_DIR ]
+				      Root directory
+                   -p PROXY           HTTP proxy to use
+                   -t                 Use tsocks
+		   -P PACKAGE_ROOT    [ $PKGROOT ]
+		   -R RELEASE         [ $RELEASE ]
                  }
       CMD     := { 
                    m  IMG_FILE [ PARTITION ]    // mount partition from image 
@@ -189,7 +198,7 @@ where OPTIONS := {
                    bw                           // build world
                    ik DEST_DIR                  // install kernel
                    iw DEST_DIR                  // install world
-                   im DEST_DIR SRC_DIR CFG_DIR // install boot, mfsroot and usr
+                   im SRC_DIR DST_DIR CFG_DIR   // install boot, mfsroot and usr
                    ip DEST_DIR                  // install packages
                  }
 EOF
@@ -206,7 +215,7 @@ _upper_() # {{{
 ###############################################################################
 _copy_() # {{{
 {
-   local SRC DST EXCLUDE COUNT
+   local SRC DST EXFILE COUNT
    #
    # copy directory using tar 
    # $1 - source directory
@@ -214,23 +223,18 @@ _copy_() # {{{
    # $3,..,$n - exclude patterns
    [ $# -ge 2 ] || return 1
    SRC=$1 ; DST=$2 ; shift 2
-   EXCLUDE=
-   COUNT=0
+   EXFILE=$WORK_DIR/exclude.$$
 
-   [ -d $SRC ] && [ -d $DST ] || return 1
+   [ -d $SRC ] || return 1
+   [ -d $DST ] || mkdir -p $DST
 
+   echo '*~' > $EXFILE
    for i in $* ; do
-      if [ "$i"x != x ] ; then
-	 [ $COUNT -eq 0 ] && EXCLUDE="( -type d -name $i )" || EXCLUDE="$EXCLUDE -or ( -type d -name $i )"
-      fi
-      COUNT=$(($COUNT+1))
+      [ "$i"x != x ] && echo $i/ >> $EXFILE
    done
-
-   echo "'*~'" > $WORK_DIR/exclude.$$
-   cd $SRC && find ./ -type d $EXCLUDE >> $WORK_DIR/exclude.$$
-
-   tar -C $SRC -X $WORK_DIR/exclude.$$ -cf - . | tar -C $DST -tvf -
-   #[ -f $WORK_DIR/exclude.$$ ] && rm -f $WORK_DIR/exclude.$$ 
+   
+   rsync -avz --exclude-from=$EXFILE $SRC/ $DST
+   [ -f $WORK_DIR/exclude.$$ ] && rm -f $WORK_DIR/exclude.$$ 
    return 0
 } # }}}
 
@@ -547,30 +551,32 @@ _install_mfsroot_ () # {{{
 {
    local DST SRC CFG MFS ERU MDEV ALL UPCFG
    # parameters
-   # $1 - target dir
-   # $2 - source dir
+   # $1 - source dir
+   # $2 - target dir
    # $3 - CFG directory 
    # $4 - all = install all, optional
    [ $# -ge 3 ] && [ $# -le 4 ] || return 1
-   [ -d $DST ] && [ -d $SRC ] && [ -d $CFG ] || exit 1
    #
-   DST=$1
-   SRC=$2
+   SRC=$1
+   DST=$2
    CFG=$3
    ALL=${4:-}
    UPCFG=
+   [ -d $SRC ] && [ -d $CFG ] || exit 1
+   [ -d $DST ] || mkdir -p $DST
    # install boot and usr
    if [ "$ALL" = "all" ] ; then
       _copy_ $SRC/boot $DST/boot
       [ -e $DST/boot/kernel/kernel.gz ] || $ZIP -9 ${DST}/boot/kernel/kernel
+      [ -e $DST/boot/kernel/kernel ] && rm -f ${DST}/boot/kernel/kernel
       #
       # usr
-      [ -d $DST/usr ] || mkdir $DST/usr
       _copy_ $SRC/usr $DST/usr 'include' 'src' 'example*' 'man' 'nls' 'info'\
 	 'i18n' 'doc' 'locale' 'zoneinfo'
    fi
    _copy_ $CFG/boot $DST/boot
    _copy_ $CFG/usr $DST/usr
+   chown -R root:wheel $DST/boot $DST/usr
    #
    ##### create mfsroot #####
    #
@@ -611,13 +617,15 @@ _install_mfsroot_ () # {{{
       for i in "usb" "var" "usr" "boot" ; do
 	 [ -d $WORK_DIR/$MDEV/$i ] || mkdir $WORK_DIR/$MDEV/$i
       done
-      cd $WORK_DIR
-      rm -fr tmp && ln -s var/tmp tmp
+      cd $WORK_DIR/$MDEV
+      rm -fr tmp ; ln -s var/tmp tmp
       cd -
    fi
    #
    # copy etc into mfsroot
    _copy_ $CFG/etc $WORK_DIR/$MDEV/etc
+   _copy_ $CFG/cfg $WORK_DIR/$MDEV/cfg
+   chown -R root:wheel $WORK_DIR/$MDEV/etc $WORK_DIR/$MDEV/cfg
    #
    sync
    $UMOUNT $WORK_DIR/$MDEV
@@ -640,8 +648,8 @@ _install_packages_() # {{{
    CHROOT=$2
 
    for pkg in $PACKAGES ; do
-      $TSOCKS env PACKAGEROOT=http://ftp.cz.freebsd.org HTTP_PROXY=$PROXY \
-         pkg_add -a $ARCH -r -C $CHROOT $pkg
+      $TSOCKS env PACKAGESITE=$PKGROOT/pub/FreeBSD/ports/$TARGET/$RELEASE/Latest\
+	 HTTP_PROXY=$PROXY pkg_add -r -C $CHROOT $pkg
       sleep 1
    done
    #
@@ -690,6 +698,8 @@ while [ "$(echo $1|cut -c1)" = "-" ] ; do
       -r) ROOT_DIR=$2 ; echo "Root dir=\"$ROOT_DIR\"" ; shift 2 ;;
       -p) PROXY=$2 ; echo "HTTP Proxy=\"$PROXY\"" ; shift 2 ;;
       -t) TSOCKS=$(which tsocks) ; shift 1 ;;
+      -P) PKGROOT=$2 ; echo "Packages Root=\"$PKGROOT\"" ; shift 2 ;;
+      -R) RELEASE=$2 ; echo "Packages Release=\"$RELEASE\"" ; shift 2 ;;
       *) echo "Unknown option $1" ; break ;;
    esac
 done
