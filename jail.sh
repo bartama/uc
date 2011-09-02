@@ -2,6 +2,8 @@
 
 set -x
 
+WORK_DIR=/tmp
+
 ###############################################################################
 _help_() # {{{ 
 {
@@ -9,6 +11,7 @@ _help_() # {{{
 $0 { OPTIONS } [ CMD ] [ CMD_ARGS ]
 where OPTIONS := { 
                    -h help
+		   -w work directory [ $WORK_DIR ] 
                  }
       CMD     := { 
                    m SRC_DIR DST_DIR  // prepare mroot image
@@ -91,15 +94,16 @@ _prepare_mroot_() # {{{
       'games' 'include' 'local' 'obj' 'share' 'src'
    #
    # create missing directories and skeleton directories
-   mkdir -p $DST/usr/home $DST/var
+   mkdir -p $DST/usr/home $DST/s
    #
    # create symbolic links
    cd $DST
    ln -s usr/home home
-   ln -s var/skel/etc etc
-   ln -s ../var/skel/usr/local usr/local
+   ln -s s/etc etc
+   ln -s s/usr/local usr/local
+   ln -s s/root root
+   ln -s s/var var
    ln -s var/tmp tmp
-   ln -s var/skel/root root
    cd -
    #
    return 0
@@ -124,10 +128,10 @@ _prepare_skel_() # {{{
    [ -d $SRC ] || return 1
    #
    # copy skel directories
-   mkdir -p $DST/skel/usr/local
-   _copy_ $SRC/var $DST 
-   _copy_ $SRC/etc $DST/skel/etc
-   _copy_ $SRC/root $DST/skel/root
+   mkdir -p $DST/usr/local
+   _copy_ $SRC/var $DST/var
+   _copy_ $SRC/etc $DST/etc/
+   _copy_ $SRC/root $DST/root
    #
    return 0
 } # }}}
@@ -150,7 +154,6 @@ _create_jail_() # {{{
       ns|http|dhcp) break ;;
       *) return 1 ;;
    esac
-   echo aaaaa
    #
    # copy skeleton
    _copy_ $SKEL $DST
@@ -184,6 +187,7 @@ while [ "$(echo $1|cut -c1)" = "-" ] ; do
 
    case "$1" in
       -h) _help_ ; return 1 ;;
+      -w) WORK_DIR=$2 ; shift 2 ;;
       *) echo "Unknown option $1" ; break ;;
    esac
 
