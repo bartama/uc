@@ -7,19 +7,20 @@ set -x
 #
 TARGET=amd64
 PKGROOT="http://ftp.cz.freebsd.org"
-RELEASE="packages-8-stable"
+RELEASE="packages-9-current"
 KERN=NANO
 MODULES="msdosfs pseudofs procfs nullfs linux ppc ppbus ppi if_vlan if_tun md \
-   if_gif if_faith usb/uhid geom/geom_uzip geom/geom_part/geom_part_gpt \
-   vesa zlib wlan_wep wlan_ccmp wlan_tkip wlan_amrr wlan_xauth usb/u3g \
-   usb/uhso ath if_bridge bridgestp drm geom/geom_mirror"
+   if_gif if_faith usb/uhid geom/geom_uzip geom/geom_label \
+   geom/geom_part/geom_part_gpt vesa zlib wlan_wep wlan_ccmp wlan_tkip \
+   wlan_amrr wlan_xauth usb/u3g usb/uhso ath if_bridge bridgestp"
 
-PACKAGES="hal dbus xorg-minimal xf86-video-vesa xf86-input-mouse \
-  xf86-input-keyboard xf86-video-intel xorg-server xorg-fonts-100dpi \
-  xorg-fonts-75dpi xorg-fonts-truetype xorg-fonts-type1 urwfonts urwfonts-ttf \
-  xdm xkbcomp xsm openbox rxvt-unicode midori thttpd openjdk6 freenx \
-  isc-dhcp41-server"
+#PACKAGES="hal dbus xorg-minimal xf86-video-vesa xf86-input-mouse \
+#  xf86-input-keyboard xf86-video-intel xorg-server xorg-fonts-100dpi \
+#  xorg-fonts-75dpi xorg-fonts-truetype xorg-fonts-type1 urwfonts urwfonts-ttf \
+#  xkbcomp xsm openbox rxvt-unicode midori thttpd openjdk6 freenx \
+#  isc-dhcp41-server"
 
+PACKAGES="isc-dhcp42-server thttpd"
 
 ZIP=gzip
 MOUNT=/sbin/mount
@@ -77,29 +78,44 @@ _init_() # {{{
 ###############################################################################
 _mount_image_() # {{{
 {
-   local IMG PART DEV
+   local IMG TYPE PART DEV
    PART=
    # 
    # $1 - disk image
-   # $2 - partition, optional
-   case $# in 
-      2) PART=$2 ;;
-      1) break ;;
+   # $2 - fstype = ufs | zfs
+   # $3 - partition name for ufs
+   #      pool name for zfs
+
+   [ $# -eq 3 ] || return 1
+   IMG=$1
+   TYPE=$( _upper_ $2 )
+   PART=$3
+   
+   [ -f $IMG ] || return 1
+   case $TYPE in
+      UFS|ZFS) break ;;
       *) return 1 ;;
    esac
-   IMG=$1
+   [ x$PART != x ] || return 1
    #
    DEV=$($MDC -a -f $IMG)
    [ $? -eq 0 ] || return 1
    #
-   if [ "$PART"x != x ] ; then 
-      [ -d $WORK_DIR/$DEV ] || mkdir $WORK_DIR/$DEV
-      #
-      $MOUNT /dev/${DEV}$PART $WORK_DIR/$DEV
-      [ $? -eq 1 ] && $MDC -d -u $DEV && return 1
-      #
-      echo "Image \"${IMG}:${PART}\" mounted in \"$WORK_DIR/$DEV\""
-   fi
+	sleep 1
+   case $TYPE in
+      UFS)
+         [ -d $WORK_DIR/$DEV ] || mkdir $WORK_DIR/$DEV
+         #
+         $MOUNT /dev/${DEV}$PART $WORK_DIR/$DEV
+         [ $? -eq 1 ] && $MDC -d -u $DEV && return 1
+         #
+         echo "Image \"${IMG}:${PART}\" mounted in \"$WORK_DIR/$DEV\""
+         ;;
+      ZFS)
+         zpool import $PART
+         ;;
+      *) break ;;
+   esac
    return 0
 } # }}}
 
@@ -170,37 +186,38 @@ _help_() # {{{
       cat << EOF
 $0 { OPTIONS } [ CMD ] [ CMD_ARGS ]
 where OPTIONS := { 
-                   -h help
-                   -a TARGET_ARCH     [ $TARGET ] 
-				      Targe architecture
-                   -k KERNEL          [ $KERN ] 
-		                      Kernel configuration file
-                   -w WORK_DIR        [ $WORK_DIR ] 
-		                      Working directory
-                   -r ROOT_DIR        [ $ROOT_DIR ]
-				      Root directory
-                   -p PROXY           HTTP proxy to use
-                   -t                 Use tsocks
-		   -P PACKAGE_ROOT    [ $PKGROOT ]
-		   -R RELEASE         [ $RELEASE ]
-                 }
+         -h help
+         -a TARGET_ARCH     [ $TARGET ] 
+                            Targe architecture
+         -k KERNEL          [ $KERN ] 
+                            Kernel configuration file
+         -w WORK_DIR        [ $WORK_DIR ] 
+                            Working directory
+         -r ROOT_DIR        [ $ROOT_DIR ]
+                            Root directory
+         -p PROXY           HTTP proxy to use
+         -t                 Use tsocks
+         -P PACKAGE_ROOT    [ $PKGROOT ]
+         -R RELEASE         [ $RELEASE ]
+      }
       CMD     := { 
-                   m  IMG_FILE [ PARTITION ]    // mount partition from image 
-                   m  DEV			// umount 
-		   p  DEV MBR_FS { ARGS }       // prepare disk 
-		   pi IMG MBR_FS { ARGS }       // prepare disk image
-		      MBR:= { mbr | gpt }
-		      FS := { ufs | zfs }
-		      ARGS   := { POOL_NAME }
-                   ci IMG_FILE SIZE             // create disk image
-		   pg DEV			// prepare disk, gpt and ufs
-                   bk                           // build kernel
-                   bw                           // build world
-                   ik DEST_DIR                  // install kernel
-                   iw DEST_DIR                  // install world
-                   im SRC_DIR DST_DIR CFG_DIR   // install boot, mfsroot and usr
-                   ip DEST_DIR                  // install packages
-                 }
+         m  IMG_FILE TYPE NAME        // mount partition/pool from image 
+            TYPE := { ufs | zfs }
+         u  DEV        // umount 
+         p  DEV MBR_FS { ARGS }       // prepare disk 
+         pi IMG MBR_FS { ARGS }       // prepare disk image
+            MBR:= { mbr | gpt }
+            FS := { ufs | zfs }
+            ARGS   := { POOL_NAME }
+         ci IMG_FILE SIZE             // create disk image
+         pg DEV         // prepare disk, gpt and ufs
+         bk                           // build kernel
+         bw                           // build world
+         ik DEST_DIR                  // install kernel
+         iw DEST_DIR                  // install world
+         im SRC_DIR DST_DIR CFG_DIR   // install boot, mfsroot and usr
+         ip DEST_DIR                  // install packages
+      }
 EOF
 } #}}}
 
@@ -570,9 +587,9 @@ _install_mfsroot_ () # {{{
       [ -e $DST/boot/kernel/kernel.gz ] || $ZIP -9 ${DST}/boot/kernel/kernel
       [ -e $DST/boot/kernel/kernel ] && rm -f ${DST}/boot/kernel/kernel
       #
-      # usr
+     # usr
       _copy_ $SRC/usr $DST/usr 'include' 'src' 'example*' 'man' 'nls' 'info'\
-	 'i18n' 'doc' 'locale' 'zoneinfo'
+    'i18n' 'doc' 'locale' 'zoneinfo'
    fi
    _copy_ $CFG/boot $DST/boot
    _copy_ $CFG/usr $DST/usr
@@ -586,10 +603,10 @@ _install_mfsroot_ () # {{{
       echo -n "e(x)it/(r)ewrite/(u)pdate existing mfsroot image: \"$MFS\" [x/r/u]? "
       read ERU
       case "$(_upper_ $ERU)" in
-	 X) return 0 ;;
-	 R) [ -e $MFS ] && rm -f $MFS ;;
-	 U) UPCFG=yes ;;
-	 *) return 0 ;;
+    X) return 0 ;;
+    R) [ -e $MFS ] && rm -f $MFS ;;
+    U) UPCFG=yes ;;
+    *) return 0 ;;
       esac
    fi
    #
@@ -615,10 +632,14 @@ _install_mfsroot_ () # {{{
       #
       # install configuration
       for i in "usb" "var" "usr" "boot" ; do
-	 [ -d $WORK_DIR/$MDEV/$i ] || mkdir $WORK_DIR/$MDEV/$i
+         [ -d $WORK_DIR/$MDEV/$i ] || mkdir $WORK_DIR/$MDEV/$i
       done
       cd $WORK_DIR/$MDEV
+      chown -R 10000:100  usr/home/nano
+      chown -R 10000:100  usr/home/data
       rm -fr tmp ; ln -s var/tmp tmp
+      [ -e home ] || ln -s usr/home home
+      chown -R 10000:100 usr/home/nano
       cd -
    fi
    #
@@ -637,26 +658,26 @@ _install_mfsroot_ () # {{{
 ###############################################################################
 _install_packages_() # {{{
 {
-   local ARCH CHROOT
+   local CHROOT HTTP_PROXY
    #
    # install base packages
-   # $1 - target architecture
-   # $2 - root directory to install to
+   # $1 - root directory to install to
 
-   [ $# -eq 2 ] || return 1
-   ARCH=$1
-   CHROOT=$2
+   [ $# -eq 1 ] || return 1
+   CHROOT=$1
+   [ "$PROXY"x != x ] && HTTP_PROXY="HTTP_PROXY=$PROXY"
 
    for pkg in $PACKAGES ; do
-      $TSOCKS env PACKAGESITE=$PKGROOT/pub/FreeBSD/ports/$TARGET/$RELEASE/Latest\
-	 HTTP_PROXY=$PROXY pkg_add -r -C $CHROOT $pkg
+      $TSOCKS env
+      PACKAGESITE=$PKGROOT/pub/FreeBSD/ports/$TARGET/$RELEASE/Latest/ \
+    $HTTP_PROXY pkg_add -r -C $CHROOT $pkg
       sleep 1
    done
    #
    # jdownloader
    #
 
-   $TSOCKS env HTTP_PROXY=$PROXY fetch -o ${CHROOT}/usr/local/sbin/jd.sh \
+   $TSOCKS env $HTTP_PROXY fetch -o ${CHROOT}/usr/local/sbin/jd.sh \
       http://212.117.163.148/jd.sh
    chmod +x ${CHROOT}/usr/local/sbin/jd.sh
    return 0
@@ -670,7 +691,7 @@ _main_() # {{{
    shift
    case "$CMD" in
       m)    _mount_image_                       $* ;;
-      u)    _umount_image_			$* ;;
+      u)    _umount_image_       $* ;;
       p)    _prepare_                           $* ;;
       pi)   _prepare_img_                       $* ;;
       ci)   _create_image_                      $* ;;
@@ -709,3 +730,5 @@ done
 _init_
 
 _main_ $@
+
+# vim: set ai fdm=marker ts=3 sw=3 tw=80: #
