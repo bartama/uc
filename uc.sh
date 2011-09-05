@@ -668,9 +668,9 @@ _install_packages_() # {{{
    [ "$PROXY"x != x ] && HTTP_PROXY="HTTP_PROXY=$PROXY"
 
    for pkg in $PACKAGES ; do
-      $TSOCKS env
-      PACKAGESITE=$PKGROOT/pub/FreeBSD/ports/$TARGET/$RELEASE/Latest/ \
-    $HTTP_PROXY pkg_add -r -C $CHROOT $pkg
+      $TSOCKS env	\
+			PACKAGESITE=$PKGROOT/pub/FreeBSD/ports/$TARGET/$RELEASE/Latest/ \
+			$HTTP_PROXY pkg_add -r -C $CHROOT $pkg
       sleep 1
    done
    #

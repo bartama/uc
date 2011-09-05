@@ -1,8 +1,23 @@
 #!/usr/bin/env sh
 
-set -x
+#set -x
 
 WORK_DIR=/tmp
+#
+# basic system specification and sources
+TARGET=i386
+PKGROOT="http://ftp.cz.freebsd.org"
+RELEASE="packages-9-current"
+#
+# 
+TSOCKS=
+PROXY=
+#
+# define additional packages to be installed
+PKG_NS=
+PKG_WWW="thttpd python27 zodb-py27"
+PKG_DHCP="isc-dhcp42-server"
+PKG_MAIL=
 
 ###############################################################################
 _help_() # {{{ 
@@ -10,14 +25,22 @@ _help_() # {{{
       cat << EOF
 $0 { OPTIONS } [ CMD ] [ CMD_ARGS ]
 where OPTIONS := { 
-                   -h help
-		   -w work directory [ $WORK_DIR ] 
+		  -h help
+		  -w WORK_DIR	    [ $WORK_DIR ] 
+				    Working directory
+		  -a TARGET_ARCH    [ $TARGET ] 
+				    Targe architecture
+		  -P PACKAGE_ROOT   [ $PKGROOT ]
+		  -R RELEASE	    [ $RELEASE ]
+		  -p PROXY	    HTTP proxy to use
+		  -t		    Use tsocks
                  }
       CMD     := { 
-                   m SRC_DIR DST_DIR  // prepare mroot image
-		   s SRC_DIR DST_DIR  // prepare skel image
+                   m SRC_DIR DST_DIR   // prepare mroot image
+		   s SRC_DIR DST_DIR   // prepare skel image
 		   j DST_DIR NAME SKELETON CFG // create jail directory 
-		     where NAME := { ns | http | dhcp }
+		   i DST_DIR NAME      // install additional packages 
+		     where NAME := { ns | www | dhcp | mail }
                  }
 EOF
 } #}}}
@@ -67,6 +90,32 @@ _copy_() # {{{
 ###############################################################################
 _init_() # {{{ 
 {
+   return 0
+} # }}}
+
+###############################################################################
+_install_packages_() # {{{
+{
+   local CHROOT PACKAGES NAME PKG
+   #
+   # install base packages
+   # $1 - root directory to install to
+   # $2 - packages set
+
+   [ $# -eq 2 ] || return 1
+   CHROOT=$1
+   NAME=$( _case_ u $2 )
+   PACKAGES=$( eval echo \$PKG_$NAME)
+
+   [ x"$PACKAGES" != x ] || return 1
+
+   for PKG in "$PACKAGES"
+   do
+      $TSOCKS env \
+	 PACKAGESITE=$PKGROOT/pub/FreeBSD/ports/$TARGET/$RELEASE/Latest/ \
+	 HTTP_PROXY=$PROXY pkg_add -r -C $CHROOT $PKG
+   done
+   #
    return 0
 } # }}}
 
@@ -139,7 +188,7 @@ _prepare_skel_() # {{{
 ###############################################################################
 _create_jail_() # {{{
 {
-   local DST NAME SKEL CFG
+   local DST NAME SKEL CFG PKGS
    # crate jail specific image based on provided skeleton and the jail's 
    # specific configuration
    # parameters:
@@ -151,7 +200,7 @@ _create_jail_() # {{{
    DST=$1 ; NAME=$( _case_ l $2 ) ; SKEL=$3 ; CFG=$4
    test -d $SKEL -a -d $CFG || return 1
    case $NAME in
-      ns|http|dhcp) break ;;
+      ns|www|dhcp) break ;;
       *) return 1 ;;
    esac
    #
@@ -174,6 +223,7 @@ _main_() # {{{
       m)    _prepare_mroot_ $* ;;
       s)    _prepare_skel_  $* ;;
       j)    _create_jail_   $* ;;
+      i)    _install_packages_ $* ;;
       *)    _help_ ;;
    esac
 
@@ -184,17 +234,18 @@ _main_() # {{{
 ###############################################################################
 # Parse options {{{
 while [ "$(echo $1|cut -c1)" = "-" ] ; do
-
    case "$1" in
       -h) _help_ ; return 1 ;;
       -w) WORK_DIR=$2 ; shift 2 ;;
+      -a) TARGET=$2 ; echo "Architecture=\"$TARGET\"" ; shift 2 ;;
+      -P) PKGROOT=$2 ; echo "Packages Root=\"$PKGROOT\"" ; shift 2 ;;
+      -R) RELEASE=$2 ; echo "Packages Release=\"$RELEASE\"" ; shift 2 ;;
+      -p) PROXY=$2 ; echo "HTTP Proxy=\"$PROXY\"" ; shift 2 ;;
+      -t) TSOCKS=$(which tsocks) ; shift 1 ;;
       *) echo "Unknown option $1" ; break ;;
    esac
-
-   return 0
 done
 # }}}
-
 
 ###############################################################################
 ###############################################################################
