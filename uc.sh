@@ -17,17 +17,10 @@ MODULES="msdosfs pseudofs procfs nullfs linux ppc ppbus ppi if_vlan if_tun md \
 #PACKAGES="hal dbus xorg-minimal xf86-video-vesa xf86-input-mouse \
 #  xf86-input-keyboard xf86-video-intel xorg-server xorg-fonts-100dpi \
 #  xorg-fonts-75dpi xorg-fonts-truetype xorg-fonts-type1 urwfonts urwfonts-ttf \
-<<<<<<< HEAD
-#  xdm xkbcomp xsm openbox rxvt-unicode midori thttpd openjdk6 freenx \
-#  isc-dhcp41-server"
-
-PACKAGES=isc-dhcp42-server
-=======
 #  xkbcomp xsm openbox rxvt-unicode midori thttpd openjdk6 freenx \
 #  isc-dhcp41-server"
 
 PACKAGES="isc-dhcp42-server thttpd"
->>>>>>> ffa39ef51cc34d0566c51ee01d3f52c21be3370e
 
 ZIP=gzip
 MOUNT=/sbin/mount
@@ -208,24 +201,6 @@ where OPTIONS := {
          -R RELEASE         [ $RELEASE ]
       }
       CMD     := { 
-<<<<<<< HEAD
-                   m  IMG_FILE [ PARTITION ]    // mount partition from image 
-                   u  DEV			// umount 
-		   p  DEV MBR_FS { ARGS }       // prepare disk 
-		   pi IMG MBR_FS { ARGS }       // prepare disk image
-		      MBR:= { mbr | gpt }
-		      FS := { ufs | zfs }
-		      ARGS   := { POOL_NAME }
-                   ci IMG_FILE SIZE             // create disk image
-		   pg DEV			// prepare disk, gpt and ufs
-                   bk                           // build kernel
-                   bw                           // build world
-                   ik DEST_DIR                  // install kernel
-                   iw DEST_DIR                  // install world
-                   im SRC_DIR DST_DIR CFG_DIR   // install boot, mfsroot and usr
-                   ip DEST_DIR                  // install packages
-                 }
-=======
          m  IMG_FILE TYPE NAME        // mount partition/pool from image 
             TYPE := { ufs | zfs }
          u  DEV        // umount 
@@ -243,7 +218,6 @@ where OPTIONS := {
          im SRC_DIR DST_DIR CFG_DIR   // install boot, mfsroot and usr
          ip DEST_DIR                  // install packages
       }
->>>>>>> ffa39ef51cc34d0566c51ee01d3f52c21be3370e
 EOF
 } #}}}
 
@@ -694,14 +668,9 @@ _install_packages_() # {{{
    [ "$PROXY"x != x ] && HTTP_PROXY="HTTP_PROXY=$PROXY"
 
    for pkg in $PACKAGES ; do
-<<<<<<< HEAD
-      $TSOCKS env PACKAGESITE=$PKGROOT/pub/FreeBSD/ports/$TARGET/$RELEASE/Latest\
-	 $HTTP_PROXY pkg_add -r -C $CHROOT $pkg
-=======
-      $TSOCKS env
-      PACKAGESITE=$PKGROOT/pub/FreeBSD/ports/$TARGET/$RELEASE/Latest/ \
-    $HTTP_PROXY pkg_add -r -C $CHROOT $pkg
->>>>>>> ffa39ef51cc34d0566c51ee01d3f52c21be3370e
+      $TSOCKS env	\
+			PACKAGESITE=$PKGROOT/pub/FreeBSD/ports/$TARGET/$RELEASE/Latest/ \
+			$HTTP_PROXY pkg_add -r -C $CHROOT $pkg
       sleep 1
    done
    #
