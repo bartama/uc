@@ -591,9 +591,8 @@ _install_mfsroot_ () # {{{
       _copy_ $SRC/usr $DST/usr 'include' 'src' 'example*' 'man' 'nls' 'info'\
     'i18n' 'doc' 'locale' 'zoneinfo'
    fi
-   _copy_ $CFG/boot $DST/boot
-   _copy_ $CFG/usr $DST/usr
-   chown -R root:wheel $DST/boot $DST/usr
+   _copy_ $CFG/boot $DST/boot && chown -R root:wheel $DST/boot
+   [ -d $CFG/usr ] && _copy_ $CFG/usr $DST/usr && chown -R root:wheel $DST/usr
    #
    ##### create mfsroot #####
    #
@@ -644,9 +643,7 @@ _install_mfsroot_ () # {{{
    fi
    #
    # copy etc into mfsroot
-   _copy_ $CFG/etc $WORK_DIR/$MDEV/etc
-   _copy_ $CFG/cfg $WORK_DIR/$MDEV/cfg
-   chown -R root:wheel $WORK_DIR/$MDEV/etc $WORK_DIR/$MDEV/cfg
+   _copy_ $CFG/etc $WORK_DIR/$MDEV/etc && chown -R root:wheel $WORK_DIR/$MDEV/etc
    #
    sync
    $UMOUNT $WORK_DIR/$MDEV
