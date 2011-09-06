@@ -485,7 +485,7 @@ _prepare_gpt_zfs_() # {{{
    $GPART add -t freebsd-zfs $DEV || return 1
    #
    # install pmbr 
-   $GPART bootcode -p /boot/gptzfsboot -i 1 $DEV || return 1
+   $GPART bootcode -b /boot/pmbr -p /boot/gptzfsboot -i 1 $DEV || return 1
    #
    # create pool
    $ZPOOL create $POOL /dev/${DEV}p2
