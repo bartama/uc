@@ -1,5 +1,1 @@
-<<<<<<< HEAD
-/home/data -mapall=nano:users -network 192.168.88/24
-=======
 /usr/home/data -mapall=nano:users -network 192.168.88.0/24
->>>>>>> ffa39ef51cc34d0566c51ee01d3f52c21be3370e
