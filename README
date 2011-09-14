@@ -1,1 +1,31 @@
 Script and config files to create a FreeBSD installation image for USB stick with root partition in RAM.
+
+1.  prepare clean system installation
+
+1.1  create directory or image to install clean system
+1.1.1  to create image use the uc.sh script with ci command
+1.1.2. to prepare image use the uc.sh script with pi command; gpt_ufs is the only working option at the moment
+
+1.2  build world using uc.sh with bw command; config file can be used or -a shitch has to be specified
+
+1.3  build kernel using uc.sh with bk command; config file can be used or -a switch has to be specified
+     GENERIC kernel is build if not othewise specified in config file or via -k switch
+
+1.4  install world using uc.sh with iw command; config file can be used or -a shitch has to be specified
+
+1.5  install kernel using uc.sh with ik command; config file can be used or -a switch has to be specified
+     GENERIC kernel is installed if not othewise specified in config file or via -k switch
+
+1.6  clean system is ready
+
+2.  prepare nano installation
+
+2.1  create directory or image to install clean system
+2.1.1  to prepare image follow instruction in step 1.1
+
+2.2  install files from clean system and apply specific configuration files using uc.sh with im switch
+
+2.3  nano system is ready to use
+
+3.  prepare and install jails for services
+

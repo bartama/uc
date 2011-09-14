@@ -5,22 +5,12 @@ set -x
 ###############################################################################
 # defaults
 #
-TARGET=amd64
-PKGROOT="http://ftp.cz.freebsd.org"
-RELEASE="packages-9-current"
-KERN=NANO
-MODULES="msdosfs pseudofs procfs nullfs linux ppc ppbus ppi if_vlan if_tun md \
-   if_gif if_faith usb/uhid geom/geom_uzip geom/geom_label \
-   geom/geom_part/geom_part_gpt vesa zlib wlan_wep wlan_ccmp wlan_tkip \
-   wlan_amrr wlan_xauth usb/u3g usb/uhso ath if_bridge bridgestp"
-
-#PACKAGES="hal dbus xorg-minimal xf86-video-vesa xf86-input-mouse \
-#  xf86-input-keyboard xf86-video-intel xorg-server xorg-fonts-100dpi \
-#  xorg-fonts-75dpi xorg-fonts-truetype xorg-fonts-type1 urwfonts urwfonts-ttf \
-#  xkbcomp xsm openbox rxvt-unicode midori thttpd openjdk6 freenx \
-#  isc-dhcp41-server"
-
-PACKAGES="isc-dhcp42-server thttpd"
+TARGET=
+PKGROOT=
+RELEASE=
+KERN=
+MODULES=
+PACKAGES=
 
 ZIP=gzip
 MOUNT=/sbin/mount
@@ -35,44 +25,14 @@ ZFS=/sbin/zfs
 TSOCKS=
 PROXY=
 
+CFG_FILE=
+
 ROOT_DIR=$PWD
 WORK_DIR=/tmp
-USB_IMG=usb.img
-USB_DIR=usb
-
-MFS_IMG=mfsroot
-MFS_DIR=mfsroot
-
-USR_IMG=$USB_IMG
-USR_DIR=usr
-
-VAR_IMG=var.img
-VAR_DIR=var
-
-DST_DIR=dst
-
-LOADER=loader.conf
-NANOETC=etc.tar.gz
 
 ###############################################################################
 _init_() # {{{ 
 {
-   USB_IMG=${ROOT_DIR}/$USB_IMG
-   USB_DIR=${WORK_DIR}/$USB_DIR
-
-   MFS_IMG=${ROOT_DIR}/$MFS_IMG
-   MFS_DIR=${WORK_DIR}/$MFS_DIR
-
-   USR_IMG=$USB_IMG
-   USR_DIR=${WORK_DIR}/$USR_DIR
-
-   VAR_IMG=${ROOT_DIR}/$VAR_IMG
-   VAR_DIR=${WORK_DIR}/$VAR_DIR
-
-   DST_DIR=${WORK_DIR}/$DST_DIR
-
-   LOADER=${ROOT_DIR}/$LOADER
-   NANOETC=${ROOT_DIR}/$NANOETC
 } # }}}
 
 ###############################################################################
@@ -101,7 +61,7 @@ _mount_image_() # {{{
    DEV=$($MDC -a -f $IMG)
    [ $? -eq 0 ] || return 1
    #
-	sleep 1
+   sleep 1
    case $TYPE in
       UFS)
          [ -d $WORK_DIR/$DEV ] || mkdir $WORK_DIR/$DEV
@@ -134,71 +94,23 @@ _umount_image_() # {{{
 } # }}}
 
 ###############################################################################
-_m_() # {{{ 
-{
-   local DIR IMG DEV RETVAL
-   RETVAL=0
-   case "$1" in
-      usb) DIR=$USB_DIR ; IMG=$USB_IMG ; DEV=s1a ;;
-      usr) DIR=$USR_DIR ; IMG=$USR_IMG ; DEV=s1a ;;
-      mfs) DIR=$MFS_DIR ; IMG=$MFS_IMG ; DEV=  ;;
-      var) DIR=$VAR_DIR ; IMG=$VAR_IMG ; DEV=  ;;
-      *) return 1;
-   esac
-
-   [ -e $DIR ] || mkdir $DIR
-   if [ "$($MOUNT | grep $DIR)"x = x ] ; then
-      if [ "$($MDC -lv | grep $IMG)"x = x ] ; then
-         DEV=/dev/$($MDC -a -f $IMG)${DEV}
-         sleep 1
-      else
-         DEV=/dev/$($MDC -lv | grep $IMG | cut -f1)${DEV}
-      fi
-      $MOUNT ${DEV} $DIR
-      RETVAL=$?
-   fi
-   return $RETVAL
-}
-# }}}
-
-###############################################################################
-_u_() # {{{ 
-{
-   local DIR IMG DEV
-   case "$1" in
-      usb) DIR=$USB_DIR ; IMG=$USB_IMG ;;
-      usr) DIR=$USR_DIR ; IMG=$USR_IMG ;;
-      mfs) DIR=$MFS_DIR ; IMG=$MFS_IMG ;;
-      var) DIR=$VAR_DIR ; IMG=$VAR_IMG ;;
-      *) return 1;
-   esac
-
-   [ "$($MOUNT | grep $DIR)"x != x ] && sync && $UMOUNT $DIR
-   DEV=$($MDC -lv | grep $IMG)
-   [ "$DEV"x != x ] && sync && $MDC -d -u $(echo "$DEV" | cut -f 1)
-   return 0
-}
-# }}}
-
-###############################################################################
 _help_() # {{{ 
 {
       cat << EOF
 $0 { OPTIONS } [ CMD ] [ CMD_ARGS ]
 where OPTIONS := { 
          -h help
-         -a TARGET_ARCH     [ $TARGET ] 
-                            Targe architecture
-         -k KERNEL          [ $KERN ] 
-                            Kernel configuration file
+         -c FILE_NAME       Configuration file name
+         -a TARGET_ARCH     Targe architecture
+         -k KERNEL_CFG_FILE Kernel configuration file
          -w WORK_DIR        [ $WORK_DIR ] 
                             Working directory
          -r ROOT_DIR        [ $ROOT_DIR ]
                             Root directory
          -p PROXY           HTTP proxy to use
          -t                 Use tsocks
-         -P PACKAGE_ROOT    [ $PKGROOT ]
-         -R RELEASE         [ $RELEASE ]
+         -P PACKAGE_ROOT    Address where to download packages
+         -R RELEASE         The release of packages
       }
       CMD     := { 
          m  IMG_FILE TYPE NAME        // mount partition/pool from image 
@@ -217,6 +129,7 @@ where OPTIONS := {
          iw DEST_DIR                  // install world
          im SRC_DIR DST_DIR CFG_DIR   // install boot, mfsroot and usr
          ip DEST_DIR                  // install packages
+         ch NANO_DIR                  // chroot to nano installation
       }
 EOF
 } #}}}
@@ -488,16 +401,22 @@ _prepare_gpt_zfs_() # {{{
 ###############################################################################
 _build_kernel_() # {{{
 {
-   local ARCH KERNEL
+   local ARCH KERNEL KNAME KMAKE
    #
    # $1 - architecture
    # $2 - kernel configuration
+   # $3 - kernel build options, optional
    #
-   [ $# -eq 2 ] || return 1
+   [ $# -ge 2 ] || return 1
    ARCH=$1
    KERNEL=$2
-   cd /usr/src && env TARGET_ARCH=$ARCH make buildkernel KERNCONF=$KERNEL
-   #-DNO_KERNELCLEAN -DKERNFAST
+   KNAME=${2##*/}
+   [ -f $KERNEL ] || return 1
+   shift 2
+   KMAKE="$*"
+   [ -h /usr/src/sys/$ARCH/conf/$KNAME ] || ln -s $KERNEL /usr/src/sys/$ARCH/conf/$KNAME
+   cd /usr/src && env TARGET_ARCH=$ARCH make buildkernel KERNCONF=$KNAME $KMAKE
+   unlink /usr/src/sys/$ARCH/conf/$KNAME
    return 0
 } # }}}
 
@@ -517,19 +436,26 @@ _build_world_() # {{{
 ###############################################################################
 _install_kernel_() # {{{
 {
-   local ARCH KERNEL DEST
+   local ARCH KERNEL KNAME DEST MODULES
    # params
    # $1 - arch
-   # $2 - kernel
+   # $2 - kernel cfg file
    # $3 - dest dir
-   [ $# -eq 3 ] || return 1
+   # $4 - modules, optional
+   [ $# -ge 3 ] || return 1
    ARCH=$1
    KERNEL=$2
+   KNAME=${2##*/}
    DEST=$3
+   shift 3
+   MODULES=$*
+   [ x"$MODULES" != x ] && MODULES="MODULES_OVERRIDE=$MODULES"
+   [ -h /usr/src/sys/$ARCH/conf/$KNAME ] || ln -s $KERNEL /usr/src/sys/$ARCH/conf/$KNAME
 
    cd /usr/src && \
-      env TARGET_ARCH=$ARCH make installkernel KERNCONF=$KERNEL DESTDIR=$DEST \
-      MODULES_OVERRIDE="$MODULES"
+      env TARGET_ARCH=$ARCH make installkernel \
+          KERNCONF=$KNAME DESTDIR=$DEST "$MODULES"
+   unlink /usr/src/sys/$ARCH/conf/$KNAME
    return 0
 } # }}}
 
@@ -554,7 +480,7 @@ _install_world_() # {{{
    # create links
    #
    # tmp -> var/tmp
-   [ -e $DEST/tmp ] && [ ! -s $DEST/tmp ] && rm -fr $DEST/tmp
+   [ -e $DEST/tmp ] && rm -fr $DEST/tmp
    cd $DEST && ln -s var/tmp tmp
    #
    # home -> usr/home
@@ -665,9 +591,9 @@ _install_packages_() # {{{
    [ "$PROXY"x != x ] && HTTP_PROXY="HTTP_PROXY=$PROXY"
 
    for pkg in $PACKAGES ; do
-      $TSOCKS env	\
-			PACKAGESITE=$PKGROOT/pub/FreeBSD/ports/$TARGET/$RELEASE/Latest/ \
-			$HTTP_PROXY pkg_add -r -C $CHROOT $pkg
+      $TSOCKS env \
+         PACKAGESITE=$PKGROOT/pub/FreeBSD/ports/$TARGET/$RELEASE/Latest/ \
+         $HTTP_PROXY pkg_add -r -C $CHROOT $pkg
       sleep 1
    done
    #
@@ -681,23 +607,79 @@ _install_packages_() # {{{
 } # }}}
 
 ###############################################################################
+_chroot_to_() #{{{
+{
+   local SRC MFSROOT CHROOT_DIR MD VAR_DIR
+   # 
+   # parameters:
+   #          $1 - directory with finished system to chroot to
+   [ $# -eq 1 ] || return 1
+   SRC=$1
+   #
+   # prepare
+   MFSROOT=$WORK_DIR/$$.mfsroot
+   CHROOT_DIR=$WORK_DIR/$$.chroot
+   VAR_DIR=$WORK_DIR/$$.var
+   #
+   # extract mfsroot
+   $ZIP -d -c $SRC/boot/mfsroot.gz | cat > $MFSROOT
+   #
+   # add memory disk with mfsroot
+   MD=$( $MDC -a -f $MFSROOT )
+   [ $? -eq 0 ] || return 1
+   #
+   # prepare directories
+   mkdir $CHROOT_DIR $VAR_DIR
+   # mount
+   $MOUNT -t ufs    /dev/$MD  $CHROOT_DIR
+   $MOUNT -t nullfs $SRC/boot $CHROOT_DIR/boot
+   $MOUNT -t nullfs $SRC/usr  $CHROOT_DIR/usr
+   $MOUNT -t nullfs $VAR_DIR  $CHROOT_DIR/var
+   #
+   # change root to
+   chroot $CHROOT_DIR
+   #
+   # umount
+   $UMOUNT $CHROOT_DIR/var
+   $UMOUNT $CHROOT_DIR/usr
+   $UMOUNT $CHROOT_DIR/boot 
+   $UMOUNT $CHROOT_DIR
+   #
+   # remove memory disk with mfsroot
+   $MDC -d -u $MD
+   # compress mfsroot back
+   $ZIP -c -9 $MFSROOT > $SRC/boot/mfsroot.gz
+   #
+   # remove temporary directory
+   rm -fr $CHROOT_DIR $VAR_DIR
+   #
+   return 0
+} #}}}
+
+###############################################################################
 _main_() # {{{ 
 {
-   local CMD
+   local CMD KTARGET STARGET KNAME KMAKE KMOD
    CMD=$1
+   KTARGET=${CMD_TARGET:-$KERNEL_TARGET}
+   STARGET=${CMD_TARGET:-$SYSTEM_TARGET}
+   KNAME=${CMD_KERNEL:-$KERNEL_NAME}
+   KMAKE=${KERNEL_MAKE:-}
+   KMOD=${KERNEL_MODULES:-}
    shift
    case "$CMD" in
-      m)    _mount_image_                       $* ;;
-      u)    _umount_image_       $* ;;
-      p)    _prepare_                           $* ;;
-      pi)   _prepare_img_                       $* ;;
-      ci)   _create_image_                      $* ;;
-      bk)   _build_kernel_        $TARGET $KERN    ;;
-      bw)   _build_world_         $TARGET          ;;
-      ik)   _install_kernel_      $TARGET $KERN $* ;;
-      iw)   _install_world_       $TARGET       $* ;;
-      im)   _install_mfsroot_                   $* ;; 
-      ip)   _install_packages_                  $* ;;
+      m)    _mount_image_                             $* ;;
+      u)    _umount_image_                            $* ;;
+      p)    _prepare_                                 $* ;;
+      pi)   _prepare_img_                             $* ;;
+      ci)   _create_image_                            $* ;;
+      bk)   _build_kernel_      $KTARGET $KNAME $KMAKE   ;;
+      bw)   _build_world_       $STARGET                 ;;
+      ik)   _install_kernel_    $KTARGET $KNAME $1 $KMOD ;;
+      iw)   _install_world_     $STARGET              $* ;;
+      im)   _install_mfsroot_                         $* ;; 
+      ip)   _install_packages_                        $* ;;
+      ch)   _chroot_to_                               $* ;;
       *)    _help_ ;;
 
    esac
@@ -705,27 +687,50 @@ _main_() # {{{
 # }}}
 
 ###############################################################################
-# Parse options {{{
-while [ "$(echo $1|cut -c1)" = "-" ] ; do
 
-   case "$1" in
-      -h) _help_ ; break ;;
-      -a) TARGET=$2 ; echo "Architecture=\"$TARGET\"" ; shift 2 ;;
-      -k) KERN=$2 ; echo "Kernel configuration=\"$KERN\"" ; shift 2 ;; 
-      -w) WORK_DIR=$2 ; echo "Work dir=\"$WORK_DIR\"" ; shift 2 ;;
-      -r) ROOT_DIR=$2 ; echo "Root dir=\"$ROOT_DIR\"" ; shift 2 ;;
-      -p) PROXY=$2 ; echo "HTTP Proxy=\"$PROXY\"" ; shift 2 ;;
-      -t) TSOCKS=$(which tsocks) ; shift 1 ;;
-      -P) PKGROOT=$2 ; echo "Packages Root=\"$PKGROOT\"" ; shift 2 ;;
-      -R) RELEASE=$2 ; echo "Packages Release=\"$RELEASE\"" ; shift 2 ;;
-      *) echo "Unknown option $1" ; break ;;
-   esac
-done
+###############################################################################
+###############################################################################
+###############################################################################
+# Main {{{
+if [ $# -gt 0 ]
+then
+# Parse options {{{
+   while [ "$(echo $1|cut -c1)" = "-" ] ; do
+
+      case "$1" in
+         -h) _help_ ; break ;;
+         -a) CMD_TARGET=$2 ; echo "Architecture=\"$CMD_TARGET\"" ; shift 2 ;;
+         -k) 
+            CMD_KERNEL=$2
+            echo "Kernel configuration file=\"$CMD_KERNEL\""
+            shift 2 
+            ;; 
+         -w) WORK_DIR=$2 ; echo "Work dir=\"$WORK_DIR\"" ; shift 2 ;;
+         -r) ROOT_DIR=$2 ; echo "Root dir=\"$ROOT_DIR\"" ; shift 2 ;;
+         -p) PROXY=$2 ; echo "HTTP Proxy=\"$PROXY\"" ; shift 2 ;;
+         -t) TSOCKS=$(which tsocks) ; shift 1 ;;
+         -P) CMD_PKGROOT=$2 ; echo "Packages Root=\"$CMD_PKGROOT\"" ; shift 2 ;;
+         -R) 
+            CMD_RELEASE=$2
+            echo "Packages Release=\"$CMD_RELEASE\"" 
+            shift 2 
+            ;;
+         -c) 
+            if [ -f $2 ] ; then 
+               CFG_FILE=$2
+               . $CFG_FILE
+               echo "Configuration file=\"$CFG_FILE\""
+            fi
+            shift 2 
+            ;;
+         *) echo "Unknown option $1" ; break ;;
+      esac
+   done
 # }}}
 
+   _init_
 
-_init_
-
-_main_ $@
-
+   _main_ $@
+fi
+# }}}
 # vim: set ai fdm=marker ts=3 sw=3 tw=80: #

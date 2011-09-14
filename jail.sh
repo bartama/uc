@@ -5,19 +5,15 @@
 WORK_DIR=/tmp
 #
 # basic system specification and sources
-TARGET=i386
-PKGROOT="http://ftp.cz.freebsd.org"
-RELEASE="packages-9-current"
+TARGET=
+PKGROOT=
+RELEASE=
 #
 # 
 TSOCKS=
 PROXY=
-#
-# define additional packages to be installed
-PKG_NS=
-PKG_WWW="thttpd python27 zodb-py27"
-PKG_DHCP="isc-dhcp42-server"
-PKG_MAIL=
+
+CFG_FILE=
 
 ###############################################################################
 _help_() # {{{ 
@@ -26,6 +22,7 @@ _help_() # {{{
 $0 { OPTIONS } [ CMD ] [ CMD_ARGS ]
 where OPTIONS := { 
 		  -h help
+		  -c FILE_NAME	    Configuration file name
 		  -w WORK_DIR	    [ $WORK_DIR ] 
 				    Working directory
 		  -a TARGET_ARCH    [ $TARGET ] 
@@ -109,12 +106,14 @@ _install_packages_() # {{{
 
    [ x"$PACKAGES" != x ] || return 1
 
+   cp /etc/resolv.conf $CHROOT/etc/
    for PKG in "$PACKAGES"
    do
       $TSOCKS env \
 	 PACKAGESITE=$PKGROOT/pub/FreeBSD/ports/$TARGET/$RELEASE/Latest/ \
 	 HTTP_PROXY=$PROXY pkg_add -r -C $CHROOT $PKG
    done
+   [ -e $CHROOT/resolv.conf ] && rm -f $CHROOT/resolv.conf
    #
    return 0
 } # }}}
@@ -192,15 +191,15 @@ _create_jail_() # {{{
    # crate jail specific image based on provided skeleton and the jail's 
    # specific configuration
    # parameters:
-   #             $1 - destination directory where to create the jail
-   #             $2 - jail name := { ns | http | dhcp }
-   #             $3 - skeleton template directory
-   #             $4 - directory with configuration data for jails
+   #	 $1 - destination directory where to create the jail
+   #	 $2 - jail name 
+   #	 $3 - skeleton template directory
+   #	 $4 - directory with configuration data for jails
    [ $# -eq 4 ] || return 1
    DST=$1 ; NAME=$( _case_ l $2 ) ; SKEL=$3 ; CFG=$4
    test -d $SKEL -a -d $CFG || return 1
    case $NAME in
-      ns|www|dhcp) break ;;
+      ns|www|dhcp|mail) break ;;
       *) return 1 ;;
    esac
    #
@@ -242,6 +241,14 @@ while [ "$(echo $1|cut -c1)" = "-" ] ; do
       -R) RELEASE=$2 ; echo "Packages Release=\"$RELEASE\"" ; shift 2 ;;
       -p) PROXY=$2 ; echo "HTTP Proxy=\"$PROXY\"" ; shift 2 ;;
       -t) TSOCKS=$(which tsocks) ; shift 1 ;;
+      -c) 
+	 if [ -f $2 ] ; then 
+	    CFG_FILE=$2
+	    source $CFG_FILE
+	    echo "Configuration file=\"$CFG_FILE\""
+	fi
+	shift 2 
+	;;
       *) echo "Unknown option $1" ; break ;;
    esac
 done
