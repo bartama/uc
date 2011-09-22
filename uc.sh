@@ -10,7 +10,6 @@ PKGROOT=
 RELEASE=
 KERN=
 MODULES=
-PACKAGES=
 
 ZIP=gzip
 MOUNT=/sbin/mount
@@ -127,6 +126,7 @@ where OPTIONS := {
          bw                           // build world
          ik DEST_DIR                  // install kernel
          iw DEST_DIR                  // install world
+         i  SRC_DIR DST_DIR CFG_DIR   // install plain system and configuration
          im SRC_DIR DST_DIR CFG_DIR   // install boot, mfsroot and usr
          ip DEST_DIR                  // install packages
          ch NANO_DIR                  // chroot to nano installation
@@ -371,8 +371,8 @@ _prepare_gpt_zfs_() # {{{
    # 
    $GPART add -t freebsd-zfs $DEV || return 1
    #
-   # install pmbr 
-   $GPART bootcode -b /boot/pmbr -p /boot/gptzfsboot -i 1 $DEV || return 1
+   # install pmbr -TODO copy compiled boot code instead of host's
+   # $GPART bootcode -b /boot/pmbr -p /boot/gptzfsboot -i 1 $DEV || return 1
    #
    # create pool
    $ZPOOL create $POOL /dev/${DEV}p2
@@ -401,22 +401,27 @@ _prepare_gpt_zfs_() # {{{
 ###############################################################################
 _build_kernel_() # {{{
 {
-   local ARCH KERNEL KNAME KMAKE
+   local ARCH KERNEL KNAME KMAKE KERNCONF
    #
    # $1 - architecture
-   # $2 - kernel configuration
+   # $2 - kernel configuration, optional
    # $3 - kernel build options, optional
    #
-   [ $# -ge 2 ] || return 1
+   [ $# -ge 1 ] || return 1
    ARCH=$1
-   KERNEL=$2
-   KNAME=${2##*/}
-   [ -f $KERNEL ] || return 1
-   shift 2
+   shift 1
+   if [ $# -ge 1 ] ; then
+      KERNEL=$1
+      [ -f $KERNEL ] || return 1
+      KNAME=/usr/src/sys/$ARCH/conf/${1##*/}
+      KERNCONF="KERNCONF=${1##*/}"
+      shift 1
+   fi
    KMAKE="$*"
-   [ -h /usr/src/sys/$ARCH/conf/$KNAME ] || ln -s $KERNEL /usr/src/sys/$ARCH/conf/$KNAME
-   cd /usr/src && env TARGET_ARCH=$ARCH make buildkernel KERNCONF=$KNAME $KMAKE
-   unlink /usr/src/sys/$ARCH/conf/$KNAME
+   [ x$KNAME != x -a ! -h $KNAME ] && ln -s $KERNEL $KNAME
+   cd /usr/src && env TARGET_ARCH=$ARCH make buildkernel $KERNCONF $KMAKE
+   [ x$KNAME != x -a -h $KNAME ] && unlink $KNAME
+
    return 0
 } # }}}
 
@@ -436,26 +441,31 @@ _build_world_() # {{{
 ###############################################################################
 _install_kernel_() # {{{
 {
-   local ARCH KERNEL KNAME DEST MODULES
+   local ARCH KERNEL KNAME DEST MODULES KERNCONF
    # params
-   # $1 - arch
-   # $2 - kernel cfg file
-   # $3 - dest dir
+   # $1 - dest dir
+   # $2 - arch
+   # $3 - kernel cfg file, optional
    # $4 - modules, optional
-   [ $# -ge 3 ] || return 1
-   ARCH=$1
-   KERNEL=$2
-   KNAME=${2##*/}
-   DEST=$3
-   shift 3
-   MODULES=$*
-   [ x"$MODULES" != x ] && MODULES="MODULES_OVERRIDE=$MODULES"
-   [ -h /usr/src/sys/$ARCH/conf/$KNAME ] || ln -s $KERNEL /usr/src/sys/$ARCH/conf/$KNAME
+   [ $# -ge 2 ] || return 1
+   DEST=$1
+   ARCH=$2
+   shift 2
+   if [ $# -ge 1 ] ; then
+      KERNEL=$1
+      [ -f $KERNEL ] || return 1
+      KNAME=/usr/src/sys/$ARCH/conf/${1##*/}
+      KERNCONF="KERNCONF=${1##*/}"
+      shift 1
+   fi
+   [ $# -ge 1 ] && MODULES=MODULES_OVERRIDE=$@ || MODULES=" "
+
+   [ x$KNAME != x -a ! -h $KNAME ] && ln -s $KERNEL $KNAME
 
    cd /usr/src && \
       env TARGET_ARCH=$ARCH make installkernel \
-          KERNCONF=$KNAME DESTDIR=$DEST "$MODULES"
-   unlink /usr/src/sys/$ARCH/conf/$KNAME
+          $KERNCONF DESTDIR=$DEST "$MODULES"
+   [ x$KNAME != x -a -h $KNAME ] && unlink $KNAME
    return 0
 } # }}}
 
@@ -481,11 +491,12 @@ _install_world_() # {{{
    #
    # tmp -> var/tmp
    [ -e $DEST/tmp ] && rm -fr $DEST/tmp
-   cd $DEST && ln -s var/tmp tmp
+   [ ! -h $DEST/tmp ] && cd $DEST && ln -s var/tmp tmp
    #
    # home -> usr/home
    [ -e $DEST/home ] && [ ! -s $DEST/home ] && rm -fr $DEST/home
-   cd $DEST && ln -s usr/home home
+   [ ! -h $DEST/home ] && cd $DEST && ln -s usr/home home
+   #
    return 0
 } # }}}
 
@@ -528,10 +539,10 @@ _install_mfsroot_ () # {{{
       echo -n "e(x)it/(r)ewrite/(u)pdate existing mfsroot image: \"$MFS\" [x/r/u]? "
       read ERU
       case "$(_upper_ $ERU)" in
-    X) return 0 ;;
-    R) [ -e $MFS ] && rm -f $MFS ;;
-    U) UPCFG=yes ;;
-    *) return 0 ;;
+         X) return 0 ;;
+         R) [ -e $MFS ] && rm -f $MFS ;;
+         U) UPCFG=yes ;;
+         *) return 0 ;;
       esac
    fi
    #
@@ -579,30 +590,85 @@ _install_mfsroot_ () # {{{
 } # }}}
 
 ###############################################################################
+_install_ () # {{{
+{
+   local DST SRC CFG MFS ERU 
+   # parameters
+   # $1 - source dir
+   # $2 - target dir
+   # $3 - CFG directory 
+   [ $# -eq 3 ] || return 1
+   #
+   SRC=$1
+   DST=$2
+   CFG=$3
+   #
+   [ -d $SRC ] && [ -d $CFG ] || exit 1
+   [ -d $DST ] || mkdir -p $DST
+   #
+   # copy root fs
+   _copy_ $SRC $DST 'usr' 'rescue' 'var' 'tmp'
+   #
+   # compress the kernel
+   [ -e $DST/boot/kernel/kernel.gz ] || $ZIP -9 ${DST}/boot/kernel/kernel
+   [ -e $DST/boot/kernel/kernel ] && rm -f ${DST}/boot/kernel/kernel
+   #
+   # copy usr
+   _copy_ $SRC/usr $DST/usr 'include' 'src' 'example*' 'man' 'nls' 'info'\
+      'i18n' 'doc' 'locale' 'zoneinfo'
+   #
+   # copy configuration
+   _copy_ $CFG/boot $DST/boot && chown -R root:wheel $DST/boot
+   _copy_ $CFG/etc $DST/etc && chown -R root:wheel $DST/etc
+   [ -d $CFG/usr ] && _copy_ $CFG/usr $DST/usr && chown -R root:wheel $DST/usr
+   #
+   # finish installation
+   for i in "var" "usr" "boot" ; do
+      [ ! -d $DST/$i ] && mkdir $DST/$i && chown root:wheel $DST/$i
+   done
+   cd $DST
+   rm -fr tmp ; ln -s var/tmp tmp
+   [ -e home ] || ln -s usr/home home
+   cd -
+   #
+   return 0
+} # }}}
+
+###############################################################################
 _install_packages_() # {{{
 {
-   local CHROOT HTTP_PROXY
+   local CHROOT ARCH PKGROOT PKGREL PPROXY
    #
    # install base packages
    # $1 - root directory to install to
+   # $2 - architecture
+   # $3 - packages root
+   # $4 - packages release
+   # $2, .., $n - packages
 
-   [ $# -eq 1 ] || return 1
+   [ $# -ge 5 ] || return 1
    CHROOT=$1
-   [ "$PROXY"x != x ] && HTTP_PROXY="HTTP_PROXY=$PROXY"
+   ARCH=$2
+   PKGROOT=$3
+   PKGREL=$4
+   shift 4
+   [ "$PROXY"x != x ] && PPROXY="HTTP_PROXY=$PROXY"
+   #
+   # copy resolv.conf into chrooted directory
+   [ -f /etc/resolv.conf ] && cp /etc/resolv.conf $CHROOT/etc/resolv.conf
 
-   for pkg in $PACKAGES ; do
+   for pkg in "$@" ; do
       $TSOCKS env \
-         PACKAGESITE=$PKGROOT/pub/FreeBSD/ports/$TARGET/$RELEASE/Latest/ \
-         $HTTP_PROXY pkg_add -r -C $CHROOT $pkg
+         PACKAGESITE=$PKGROOT/pub/FreeBSD/ports/$ARCH/$PKGREL/Latest/ \
+         $PPROXY pkg_add -r -C $CHROOT $pkg
       sleep 1
    done
    #
    # jdownloader
    #
-
-   $TSOCKS env $HTTP_PROXY fetch -o ${CHROOT}/usr/local/sbin/jd.sh \
-      http://212.117.163.148/jd.sh
-   chmod +x ${CHROOT}/usr/local/sbin/jd.sh
+   #$TSOCKS env $HTTP_PROXY fetch -o ${CHROOT}/usr/local/sbin/jd.sh \
+   #   http://212.117.163.148/jd.sh
+   #chmod +x ${CHROOT}/usr/local/sbin/jd.sh
    return 0
 } # }}}
 
@@ -659,13 +725,17 @@ _chroot_to_() #{{{
 ###############################################################################
 _main_() # {{{ 
 {
-   local CMD KTARGET STARGET KNAME KMAKE KMOD
+   local CMD KTARGET STARGET KNAME KMAKE KMOD PROOT PREL PKGS
    CMD=$1
    KTARGET=${CMD_TARGET:-$KERNEL_TARGET}
    STARGET=${CMD_TARGET:-$SYSTEM_TARGET}
    KNAME=${CMD_KERNEL:-$KERNEL_NAME}
    KMAKE=${KERNEL_MAKE:-}
    KMOD=${KERNEL_MODULES:-}
+   PROOT=${CMD_PKGROOT:-$SYSTEM_PKGROOT}
+   PREL=${CMD_RELEASE:-$SYSTEM_RELEASE}
+   PKGS=${SYSTEM_PACKAGES:-}
+   
    shift
    case "$CMD" in
       m)    _mount_image_                             $* ;;
@@ -675,10 +745,11 @@ _main_() # {{{
       ci)   _create_image_                            $* ;;
       bk)   _build_kernel_      $KTARGET $KNAME $KMAKE   ;;
       bw)   _build_world_       $STARGET                 ;;
-      ik)   _install_kernel_    $KTARGET $KNAME $1 $KMOD ;;
+      ik)   _install_kernel_    $1 $KTARGET $KNAME $KMOD ;;
       iw)   _install_world_     $STARGET              $* ;;
       im)   _install_mfsroot_                         $* ;; 
-      ip)   _install_packages_                        $* ;;
+      i)    _install_                                 $* ;; 
+      ip)   _install_packages_  $1 $STARGET $PROOT $PREL $PKGS ;;
       ch)   _chroot_to_                               $* ;;
       *)    _help_ ;;
 
