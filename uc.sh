@@ -617,15 +617,16 @@ _install_ () # {{{
    _copy_ $SRC/usr $DST/usr 'include' 'src' 'example*' 'man' 'nls' 'info'\
       'i18n' 'doc' 'locale' 'zoneinfo'
    #
-   # copy configuration
-   _copy_ $CFG/boot $DST/boot && chown -R root:wheel $DST/boot
-   _copy_ $CFG/etc $DST/etc && chown -R root:wheel $DST/etc
-   [ -d $CFG/usr ] && _copy_ $CFG/usr $DST/usr && chown -R root:wheel $DST/usr
-   #
    # finish installation
    for i in "var" "usr" "boot" ; do
       [ ! -d $DST/$i ] && mkdir $DST/$i && chown root:wheel $DST/$i
    done
+   #
+   # copy configuration
+   rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/boot/ $DST/boot
+   rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/etc/ $DST/etc
+   [ -d $CFG/usr ] && rsync -avzKO --no-owner --no-group --exclude '*~' \
+		$CFG/usr/ $DST/usr
    cd $DST
    rm -fr tmp ; ln -s var/tmp tmp
    [ -e home ] || ln -s usr/home home
