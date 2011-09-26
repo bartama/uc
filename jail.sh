@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-#set -x
+set -x
 
 WORK_DIR=/tmp
 #
@@ -35,7 +35,7 @@ where OPTIONS := {
       CMD     := { 
                    m SRC_DIR DST_DIR   // prepare mroot image
 		   s SRC_DIR DST_DIR   // prepare skel image
-		   j DST_DIR NAME SKELETON CFG // create jail directory 
+		   j DST_DIR NAME MROOT SKELETON CFG // create jail directory 
 		   i DST_DIR NAME      // install additional packages 
 		     where NAME := { ns | www | dhcp | mail }
                  }
@@ -80,7 +80,7 @@ _copy_() # {{{
       [ "$i"x != x ] && echo $i/ >> $EXFILE
    done
    
-   rsync -avz --exclude-from=$EXFILE $SRC/ $DST
+   rsync -avzKO --exclude-from=$EXFILE $SRC/ $DST
    return 0
 } # }}}
 
@@ -102,9 +102,9 @@ _install_packages_() # {{{
    [ $# -eq 2 ] || return 1
    CHROOT=$1
    NAME=$( _case_ u $2 )
-   PACKAGES=$( eval echo \$PKG_$NAME)
+   PACKAGES=$( eval echo \$JAIL_${NAME}_PKG )
 
-   [ x"$PACKAGES" != x ] || return 1
+   [ x"$PACKAGES" != x ] || return 0
 
    cp /etc/resolv.conf $CHROOT/etc/
    for PKG in "$PACKAGES"
@@ -187,28 +187,45 @@ _prepare_skel_() # {{{
 ###############################################################################
 _create_jail_() # {{{
 {
-   local DST NAME SKEL CFG PKGS
+   local DST NAME MROOT SKEL CFG PKGS TMP
    # crate jail specific image based on provided skeleton and the jail's 
    # specific configuration
    # parameters:
    #	 $1 - destination directory where to create the jail
    #	 $2 - jail name 
-   #	 $3 - skeleton template directory
-   #	 $4 - directory with configuration data for jails
-   [ $# -eq 4 ] || return 1
-   DST=$1 ; NAME=$( _case_ l $2 ) ; SKEL=$3 ; CFG=$4
-   test -d $SKEL -a -d $CFG || return 1
+   #	 $3 - mroot directory
+   #	 $4 - skeleton template directory
+   #	 $5 - directory with configuration data for jails
+   [ $# -eq 5 ] || return 1
+   DST=$1 ; NAME=$( _case_ l $2 ) ; MROOT=$3 ;  SKEL=$4 ; CFG=$5
+   test -d $MROOT -a -d $SKEL -a -d $CFG || return 2
    case $NAME in
       ns|www|dhcp|mail) break ;;
       *) return 1 ;;
    esac
    #
+   # prepare temporary target directory
+   TMP=$WORK_DIR/$$.$NAME
+   mkdir -p $TMP || return 1
+   mount -t nullfs -o ro $MROOT $TMP
+   mkdir -p ${TMP}_s
    # copy skeleton
-   _copy_ $SKEL $DST
+   _copy_ $SKEL ${TMP}_s
+   mount -t nullfs -o rw ${TMP}_s ${TMP}/s
+   #
+   # install packages
+   _install_packages_ $TMP $NAME
    #
    # copy configuration
-   _copy_ $CFG/$NAME $DST
+   rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/$NAME/ $TMP
    #
+   #finalize jail
+   _copy_ ${TMP}_s $DST 'include' 'src' 'example*' 'man' 'nls' 'info'\
+      'i18n' 'doc' 'locale' 'zoneinfo'
+   # cleanup
+   umount ${TMP}/s
+   umount $TMP
+   rm -fr ${TMP} ${TMP}_s
    return 0
 } # }}}
 
@@ -244,7 +261,7 @@ while [ "$(echo $1|cut -c1)" = "-" ] ; do
       -c) 
 	 if [ -f $2 ] ; then 
 	    CFG_FILE=$2
-	    source $CFG_FILE
+	    . $CFG_FILE
 	    echo "Configuration file=\"$CFG_FILE\""
 	fi
 	shift 2 
