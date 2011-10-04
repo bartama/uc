@@ -116,13 +116,12 @@ where OPTIONS := {
          m  IMG_FILE TYPE NAME        // mount partition/pool from image 
             TYPE := { ufs | zfs }
          u  DEV        // umount 
-         p  DEV MBR_FS { ARGS }       // prepare disk 
-         pi IMG MBR_FS { ARGS }       // prepare disk image
-            MBR:= { mbr | gpt }
+         p  SRC_DIR DEV PS FS { ARGS }// prepare disk 
+         pi SRC_DIR IMG PS FS { ARGS }// prepare disk image
+            PS := { mbr | gpt }
             FS := { ufs | zfs }
-            ARGS   := { POOL_NAME }
+            ARGS := { POOL_NAME }
          ci IMG_FILE SIZE             // create disk image
-         pg DEV         // prepare disk, gpt and ufs
          bk                           // build kernel
          bw                           // build world
          ik DEST_DIR                  // install kernel
@@ -195,38 +194,43 @@ _create_image_() # {{{
 ###############################################################################
 _prepare_() # {{{
 {
-   local DEV M
+   local SRC DEV PS FS 
    # prepare target disk image
-   # $1 - disk device 
-   # $2 - prepare methdod, mbr, gpt, zfs, ...
-   # $3, ... optional arguments
-   [ $# -ge 2 ] || return 1
+	# $1 - source directory with boot directory
+   # $2 - disk device 
+   # $3 - type of partition scheme: mbr, gpt
+	# $4 - type of file system: ufs, zfs
+   # $5, ... optional arguments
+   [ $# -ge 4 ] || return 1
    #
-   DEV=$1
-   M=$2
-   shift 2
-   eval "_prepare_${M}_ $DEV $*"
+   SRC=$1 ; DEV=$2 ; PS=$3 ; FS=$4
+   shift 4
+   eval "_prepare_${PS}_${FS}_ $SRC $DEV $*"
 } #}}}
 
 ###############################################################################
 _prepare_img_() # {{{
 {
-   local DEV 
+   local SRC DEV 
    # prepare target disk image
-   # $1 - disk device image
-   # $2 - prepare methdod, mbr, gpt, zfs, ...
-   [ $# -ge 2 ] || return 1
+	# $1 - source directory with boot directory
+   # $2 - disk device image
+   # $3 - type of partition scheme: mbr, gpt
+	# $4 - type of file system: ufs, zfs
+   [ $# -ge 4 ] || return 1
    #
+	SRC=$1
    DEV=$($MDC -a -f $1)
-   shift 1
-   _prepare_ $DEV $*
+   shift 2
+   _prepare_ $SRC $DEV $*
    $MDC -d -u $DEV
 } #}}}
 
 ###############################################################################
-_prepare_mbr() # {{{
+_prepare_mbr_old_() # {{{
 {
    local DEV
+	# it is OBSOLETE now
    # prepare target disk image as MBR 
    # $1 - disk device
    [ $# -eq 1 ] || return 1
@@ -259,12 +263,14 @@ _prepare_mbr() # {{{
 ###############################################################################
 _prepare_mbr_ufs() # {{{
 {
-   local DEV
+   local SRC DEV
+	# It is OBSOLETE now
    # prepare target disk image as MBR 
-   # $1 - disk device
-   [ $# -eq 1 ] || return 1
+	# $1 - source directory with boot directory
+   # $2 - disk device
+   [ $# -eq 2 ] || return 1
    #
-   DEV=$1
+   SRC=$1 ; DEV=$2
    #
    $FDISK -BI $DEV
    #$GPART create -s MBR $DEV || return 1
@@ -290,38 +296,36 @@ _prepare_mbr_ufs() # {{{
 } #}}}
 
 ###############################################################################
-_prepare_mbrg_() # {{{
+_prepare_mbr_() # {{{
 {
-   local DEV
+   local SRC DEV
    # prepare target disk image
-   # $1 - disk device
-   [ $# -eq 1 ] || return 1
-   DEV=$1
+	# $1 - source directory with boot directory
+   # $2 - disk device
+   [ $# -eq 2 ] || return 1
+   SRC=$1 ; DEV=$2
    #
    $GPART create -s MBR $DEV || return 1
-   $GPART bootcode -b /boot/boot0 $DEV || return 1
    #
    $GPART add -t freebsd $DEV || return 1
    $GPART set -a active -i 1 $DEV || return 1
    #
    $GPART create -s BSD ${DEV}s1 || return 1
    #
-   $GPART add -t freebsd-ufs ${DEV}s1 || return 1
+   $GPART bootcode -b $SRC/boot/boot0 $DEV || return 1
    #
-   $GPART bootcode -i 1 -p /boot/boot1 ${DEV} || return 1
-   #
-   $NEWFS -O1 ${DEV}s1a || return 1
    return 0
-} #}}}
+} # }}}
 
 ###############################################################################
 _prepare_gpt_() # {{{
 {
-   local DEV
+   local SRC DEV
    # prepare target disk image as GPT
-   # $1 - disk device
-   [ $# -eq 1 ] || return 1
-   DEV=$1
+	# $1 - source directory with boot directory
+   # $2 - disk device
+   [ $# -eq 2 ] || return 1
+   SRC=$1 ; DEV=$2
    #
    # create GPT geometry
    $GPART create -s GPT $DEV || return 1
@@ -330,7 +334,7 @@ _prepare_gpt_() # {{{
    $GPART add -b 34 -s 128 -t freebsd-boot $DEV || return 1
    # 
    # install pmbr 
-   $GPART bootcode -b /boot/pmbr $DEV || return 1
+   $GPART bootcode -b $SRC/boot/pmbr $DEV || return 1
    #
    return 0
 } #}}}
@@ -338,18 +342,19 @@ _prepare_gpt_() # {{{
 ###############################################################################
 _prepare_gpt_ufs_() # {{{
 {
-   local DEV
+   local SRC DEV
    # prepare target disk image
-   # $1 - disk device
-   [ $# -eq 1 ] || return 1
-   DEV=$1
+	# $1 - source directory with boot directory
+   # $2 - disk device
+   [ $# -eq 2 ] || return 1
+   SRC=$1 ; DEV=$2
    #
-   _prepare_gpt_ $DEV || return 1
+   _prepare_gpt_ $SRC $DEV || return 1
    #
    $GPART add -t freebsd-ufs $DEV || return 1
    #
    # install bootcode
-   $GPART bootcode -p /boot/gptboot -i 1 $DEV || return 1
+   $GPART bootcode -p $SRC/boot/gptboot -i 1 $DEV || return 1
    #
    $NEWFS -O2 -U /dev/${DEV}p2 || return 1
    return 0
@@ -358,27 +363,79 @@ _prepare_gpt_ufs_() # {{{
 ###############################################################################
 _prepare_gpt_zfs_() # {{{
 {
+   local SRC DEV POOL
    # parameters
-   # $1 - device name to work on
-   # $2 - pool name 
+	# $1 - source directory with boot directory
+   # $2 - device name to work on
+   # $3 - pool name 
    #
-   local DEV POOL
    #
-   [ $# -eq 2 ] || return 1
-   DEV=$1
-   POOL=$2
+   [ $# -eq 3 ] || return 1
+   SRC=$1 ; DEV=$2 ; POOL=$3
    #
-   _prepare_gpt_ $DEV || return 1
+   _prepare_gpt_ $SRC $DEV || return 1
    # 
    $GPART add -t freebsd-zfs $DEV || return 1
    #
-   # install pmbr -TODO copy compiled boot code instead of host's
-   # $GPART bootcode -b /boot/pmbr -p /boot/gptzfsboot -i 1 $DEV || return 1
+   # install pmbr 
+   $GPART bootcode -p $SRC/boot/gptzfsboot -i 1 $DEV || return 1
    #
    # create pool
    $ZPOOL create $POOL /dev/${DEV}p2
    $ZPOOL set bootfs=$POOL $POOL
+	#
+	_finish_zfs_ $POOL
+   # export pool
+   sleep 3
+   $ZPOOL export $POOL
+} # }}}
+
+###############################################################################
+_prepare_mbr_zfs_() # {{{
+{
+   local SRC DEV POOL
+   # parameters
+	# $1 - source directory with boot directory
+   # $2 - device name to work on
+   # $3 - pool name 
    #
+   #
+   [ $# -eq 3 ] || return 1
+   SRC=$1 ; DEV=$2 ; POOL=$3
+   #
+   _prepare_mbr_ $DEV || return 1
+   # 
+   $GPART add -t freebsd-zfs ${DEV}s1 || return 1
+   #
+	# Install the boot1 stage
+	dd if=$SRC/boot/zfsboot of=/dev/${DEV}s1 count=1
+	#
+   # create pool
+   $ZPOOL create $POOL /dev/${DEV}s1a || return 1
+   $ZPOOL set bootfs=$POOL $POOL
+	#
+	_finish_zfs_ $POOL
+   # export pool
+   sleep 3
+   $ZPOOL export $POOL
+	#
+	#Install the boot2 zfs stage
+	dd if=$SRC/boot/zfsboot of=/dev/${DEV}s1a skip=1 seek=1024
+   #
+	return 0
+} # }}}
+
+###############################################################################
+_finish_zfs_() # {{{
+{
+	local POOL
+	# 
+	# finish creation of zfs filesystem
+	# parameters
+	# $1 - pool name
+   #
+	[ $# -eq 1 ] || return 1
+	#
    # create ZFS filesystem
    $ZFS set checksum=fletcher4 $POOL
    $ZFS create $POOL/usr
@@ -393,9 +450,7 @@ _prepare_gpt_zfs_() # {{{
    #
    [ -d /$POOL/boot/zfs ] || mkdir -p /$POOL/boot/zfs
    cp /boot/zfs/zpool.cache /$POOL/boot/zfs/zpool.cache
-   # export pool
-   sleep 3
-   $ZPOOL export $POOL
+	#
    return 0
 } #}}}
 

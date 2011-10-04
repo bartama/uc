@@ -1,0 +1,3 @@
+nano	       /	   zfs	 rw	     0	   0
+nano/usr       /usr	   zfs	 rw	     0	   0
+nano/usr/home  /usr/home   zfs	 rw	     0	   0

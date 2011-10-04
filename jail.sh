@@ -5,9 +5,9 @@ set -x
 WORK_DIR=/tmp
 #
 # basic system specification and sources
-TARGET=
-PKGROOT=
-RELEASE=
+CMD_TARGET=
+CMD_PKGROOT=
+CMD_RELEASE=
 #
 # 
 TSOCKS=
@@ -25,10 +25,9 @@ where OPTIONS := {
 		  -c FILE_NAME	    Configuration file name
 		  -w WORK_DIR	    [ $WORK_DIR ] 
 				    Working directory
-		  -a TARGET_ARCH    [ $TARGET ] 
-				    Targe architecture
-		  -P PACKAGE_ROOT   [ $PKGROOT ]
-		  -R RELEASE	    [ $RELEASE ]
+		  -a TARGET_ARCH    Targe architecture
+		  -P PACKAGE_ROOT   
+		  -R RELEASE	    
 		  -p PROXY	    HTTP proxy to use
 		  -t		    Use tsocks
                  }
@@ -93,16 +92,19 @@ _init_() # {{{
 ###############################################################################
 _install_packages_() # {{{
 {
-   local CHROOT PACKAGES NAME PKG
+   local CHROOT ARCH PROOT PREL PACKAGES NAME PKG
    #
    # install base packages
    # $1 - root directory to install to
-   # $2 - packages set
+   # $2 - target architecture
+   # $3 - packages root 
+   # $4 - packages release
+   # $5, ..., $n - packages
 
-   [ $# -eq 2 ] || return 1
-   CHROOT=$1
-   NAME=$( _case_ u $2 )
-   PACKAGES=$( eval echo \$JAIL_${NAME}_PKG )
+   [ $# -ge 5 ] || return 1
+   CHROOT=$1 ; ARCH=$2 ; PROOT=$3 ; PREL=$4
+   shift 4
+   PACKAGES="$@"
 
    [ x"$PACKAGES" != x ] || return 0
 
@@ -110,7 +112,7 @@ _install_packages_() # {{{
    for PKG in "$PACKAGES"
    do
       $TSOCKS env \
-	 PACKAGESITE=$PKGROOT/pub/FreeBSD/ports/$TARGET/$RELEASE/Latest/ \
+	 PACKAGESITE=$PROOT/pub/FreeBSD/ports/$ARCH/$PREL/Latest/ \
 	 HTTP_PROXY=$PROXY pkg_add -r -C $CHROOT $PKG
    done
    [ -e $CHROOT/resolv.conf ] && rm -f $CHROOT/resolv.conf
@@ -187,7 +189,7 @@ _prepare_skel_() # {{{
 ###############################################################################
 _create_jail_() # {{{
 {
-   local DST NAME MROOT SKEL CFG PKGS TMP
+   local DST NAME MROOT SKEL CFG PKGS TMP ARCH PROOT PREL
    # crate jail specific image based on provided skeleton and the jail's 
    # specific configuration
    # parameters:
@@ -196,7 +198,10 @@ _create_jail_() # {{{
    #	 $3 - mroot directory
    #	 $4 - skeleton template directory
    #	 $5 - directory with configuration data for jails
-   [ $# -eq 5 ] || return 1
+   #	 $6 - target architecture
+   #     $7 - packages root
+   #     $8 - packages release
+   [ $# -eq 8 ] || return 1
    DST=$1 ; NAME=$( _case_ l $2 ) ; MROOT=$3 ;  SKEL=$4 ; CFG=$5
    test -d $MROOT -a -d $SKEL -a -d $CFG || return 2
    case $NAME in
@@ -214,7 +219,7 @@ _create_jail_() # {{{
    mount -t nullfs -o rw ${TMP}_s ${TMP}/s
    #
    # install packages
-   _install_packages_ $TMP $NAME
+   _install_packages_ $TMP $6 $7 $8 $( eval echo \$JAIL_"$( _case_ u $NAME)"_PKG )
    #
    # copy configuration
    rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/$NAME/ $TMP
@@ -232,14 +237,18 @@ _create_jail_() # {{{
 ###############################################################################
 _main_() # {{{ 
 {
-   local CMD
-   CMD=$1
-   shift
+   local CMD TARGET PKGROOT RELEASE
+   CMD=$1 ; shift
+
+   TARGET=${CMD_TARGET:-$SYSTEM_TARGET}
+   PKGROOT=${CMD_PKGROOT:-$SYSTEM_PKGROOT}
+   RELEASE=${CMD_RELEASE:-$SYSTEM_RELEASE}
+
    case "$CMD" in
       m)    _prepare_mroot_ $* ;;
       s)    _prepare_skel_  $* ;;
-      j)    _create_jail_   $* ;;
-      i)    _install_packages_ $* ;;
+      j)    _create_jail_   $* $TARGET $PKGROOT $RELEASE    ;;
+      i)    _install_packages_ $TARGET $PKGROOT $RELEASE $* ;;
       *)    _help_ ;;
    esac
 
@@ -253,9 +262,9 @@ while [ "$(echo $1|cut -c1)" = "-" ] ; do
    case "$1" in
       -h) _help_ ; return 1 ;;
       -w) WORK_DIR=$2 ; shift 2 ;;
-      -a) TARGET=$2 ; echo "Architecture=\"$TARGET\"" ; shift 2 ;;
-      -P) PKGROOT=$2 ; echo "Packages Root=\"$PKGROOT\"" ; shift 2 ;;
-      -R) RELEASE=$2 ; echo "Packages Release=\"$RELEASE\"" ; shift 2 ;;
+      -a) CMD_TARGET=$2 ; echo "Architecture=\"$CMD_TARGET\"" ; shift 2 ;;
+      -P) CMD_PKGROOT=$2 ; echo "Packages Root=\"$CMD_PKGROOT\"" ; shift 2 ;;
+      -R) CMD_RELEASE=$2 ; echo "Packages Release=\"$CMD_RELEASE\"" ; shift 2 ;;
       -p) PROXY=$2 ; echo "HTTP Proxy=\"$PROXY\"" ; shift 2 ;;
       -t) TSOCKS=$(which tsocks) ; shift 1 ;;
       -c) 

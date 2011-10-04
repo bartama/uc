@@ -3,14 +3,14 @@
 #
 KERNEL_TARGET=amd64
 #KERNEL_NAME=
-KERNEL_NAME=/home/bart/workspace/uc/nano/gpt_zfs/kernels/amd64/NANO
+KERNEL_NAME=/home/bart/workspace/uc/nano/mbr_zfs/kernels/amd64/NANO
 #KERNEL_MAKE=
 #KERNEL_MAKE="-DKERNFAST" 
 KERNEL_MAKE="-DNO_KERNELCLEAN"
-#KERNEL_MODULES=
-KERNEL_MODULES="msdosfs cd9660 opensolaris zfs \
-	 linux ppc ppbus ppi vesa pf pflog pfsync \
-	 wlan_wep wlan_ccmp wlan_tkip wlan_amrr wlan_xauth ath"
+KERNEL_MODULES=
+#KERNEL_MODULES="msdosfs cd9660 opensolaris zfs \
+#	 linux ppc ppbus ppi vesa pf pflog pfsync \
+#	 wlan_wep wlan_ccmp wlan_tkip wlan_amrr wlan_xauth ath"
 #
 # system configuration
 # 
