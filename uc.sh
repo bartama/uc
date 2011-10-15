@@ -126,7 +126,8 @@ where OPTIONS := {
          bw                           // build world
          ik DEST_DIR                  // install kernel
          iw DEST_DIR                  // install world
-         i  SRC_DIR DST_DIR CFG_DIR   // install plain system and configuration
+         i  SRC DST CFG_DIR {OPTS}    // install plain system and configuration
+			   OPTS := { nocfg }
          im SRC_DIR DST_DIR CFG_DIR   // install boot, mfsroot and usr
          ip DEST_DIR                  // install packages
          ch NANO_DIR                  // chroot to nano installation
@@ -403,7 +404,7 @@ _prepare_mbr_zfs_() # {{{
    [ $# -eq 3 ] || return 1
    SRC=$1 ; DEV=$2 ; POOL=$3
    #
-   _prepare_mbr_ $DEV || return 1
+   _prepare_mbr_ $SRC $DEV || return 1
    # 
    $GPART add -t freebsd-zfs ${DEV}s1 || return 1
    #
@@ -421,6 +422,30 @@ _prepare_mbr_zfs_() # {{{
 	#
 	#Install the boot2 zfs stage
 	dd if=$SRC/boot/zfsboot of=/dev/${DEV}s1a skip=1 seek=1024
+   #
+	return 0
+} # }}}
+
+###############################################################################
+_prepare_mbr_ufs_() # {{{
+{
+   local SRC DEV 
+   # parameters
+	# $1 - source directory with boot directory
+   # $2 - device name to work on
+   #
+   #
+   [ $# -eq 2 ] || return 1
+   SRC=$1 ; DEV=$2
+   #
+   _prepare_mbr_ $SRC $DEV || return 1
+   # 
+   $GPART add -t freebsd-ufs ${DEV}s1 || return 1
+   #
+   # install bootcode
+   $GPART bootcode -b $SRC/boot/boot ${DEV}s1 || return 1
+   #
+   $NEWFS -O2 -U /dev/${DEV}s1a || return 1
    #
 	return 0
 } # }}}
@@ -579,13 +604,15 @@ _install_mfsroot_ () # {{{
       _copy_ $SRC/boot $DST/boot
       [ -e $DST/boot/kernel/kernel.gz ] || $ZIP -9 ${DST}/boot/kernel/kernel
       [ -e $DST/boot/kernel/kernel ] && rm -f ${DST}/boot/kernel/kernel
-      #
+     #
      # usr
-      _copy_ $SRC/usr $DST/usr 'include' 'src' 'example*' 'man' 'nls' 'info'\
-    'i18n' 'doc' 'locale' 'zoneinfo'
+     _copy_ $SRC/usr $DST/usr 'include' 'src' 'example*' 'man' 'nls' 'info'\
+			'i18n' 'doc' 'locale' 'calendar' 'groff_font' 'mk' \
+			'pc-sysinstall' 'snmp/' 'tmac/' 
    fi
-   _copy_ $CFG/boot $DST/boot && chown -R root:wheel $DST/boot
-   [ -d $CFG/usr ] && _copy_ $CFG/usr $DST/usr && chown -R root:wheel $DST/usr
+	rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/boot/ $DST/boot
+	[ -d $CFG/usr ] && rsync -avzKO --no-owner --no-group --exclude '*~' \
+		$CFG/usr/ $DST/usr
    #
    ##### create mfsroot #####
    #
@@ -627,16 +654,13 @@ _install_mfsroot_ () # {{{
          [ -d $WORK_DIR/$MDEV/$i ] || mkdir $WORK_DIR/$MDEV/$i
       done
       cd $WORK_DIR/$MDEV
-      chown -R 10000:100  usr/home/nano
-      chown -R 10000:100  usr/home/data
       rm -fr tmp ; ln -s var/tmp tmp
       [ -e home ] || ln -s usr/home home
-      chown -R 10000:100 usr/home/nano
       cd -
    fi
    #
    # copy etc into mfsroot
-   _copy_ $CFG/etc $WORK_DIR/$MDEV/etc && chown -R root:wheel $WORK_DIR/$MDEV/etc
+	rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/etc/ $WORK_DIR/$MDEV/etc
    #
    sync
    $UMOUNT $WORK_DIR/$MDEV
@@ -648,16 +672,17 @@ _install_mfsroot_ () # {{{
 ###############################################################################
 _install_ () # {{{
 {
-   local DST SRC CFG MFS ERU 
+   local DST SRC CFG MFS ERU OPT
    # parameters
    # $1 - source dir
    # $2 - target dir
    # $3 - CFG directory 
-   [ $# -eq 3 ] || return 1
+	# $4, ..., $n - optional switches
+   [ $# -ge 3 ] || return 1
    #
-   SRC=$1
-   DST=$2
-   CFG=$3
+   SRC=$1 ; DST=$2 ; CFG=$3
+	shift 3
+	OPT="$*"
    #
    [ -d $SRC ] && [ -d $CFG ] || exit 1
    [ -d $DST ] || mkdir -p $DST
@@ -671,7 +696,7 @@ _install_ () # {{{
    #
    # copy usr
    _copy_ $SRC/usr $DST/usr 'include' 'src' 'example*' 'man' 'nls' 'info'\
-      'i18n' 'doc' 'locale' 'zoneinfo'
+      'i18n' 'doc' 'locale' 
    #
    # finish installation
    for i in "var" "usr" "boot" ; do
@@ -679,10 +704,13 @@ _install_ () # {{{
    done
    #
    # copy configuration
-   rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/boot/ $DST/boot
-   rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/etc/ $DST/etc
-   [ -d $CFG/usr ] && rsync -avzKO --no-owner --no-group --exclude '*~' \
-		$CFG/usr/ $DST/usr
+	if ! $(echo "$OPT" | grep -q 'nocfg')
+	then
+		rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/boot/ $DST/boot
+		rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/etc/ $DST/etc
+		[ -d $CFG/usr ] && rsync -avzKO --no-owner --no-group --exclude '*~' \
+			$CFG/usr/ $DST/usr
+	fi
    cd $DST
    rm -fr tmp ; ln -s var/tmp tmp
    [ -e home ] || ln -s usr/home home
@@ -762,6 +790,10 @@ _chroot_to_() #{{{
    # change root to
    chroot $CHROOT_DIR
    #
+	# sync
+	sync
+	#
+	sleep 10
    # umount
    $UMOUNT $CHROOT_DIR/var
    $UMOUNT $CHROOT_DIR/usr
@@ -770,11 +802,14 @@ _chroot_to_() #{{{
    #
    # remove memory disk with mfsroot
    $MDC -d -u $MD
+	#
+	sleep 5
+	#
    # compress mfsroot back
    $ZIP -c -9 $MFSROOT > $SRC/boot/mfsroot.gz
    #
    # remove temporary directory
-   rm -fr $CHROOT_DIR $VAR_DIR
+   rm -fr $CHROOT_DIR $VAR_DIR $MFSROOT
    #
    return 0
 } #}}}

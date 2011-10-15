@@ -3,18 +3,20 @@
 #
 KERNEL_TARGET=amd64
 #KERNEL_NAME=
-KERNEL_NAME=/nfs/home/test/uc/nano/gpt_ufs_mfsroot/kernels/amd64/NANO
+KERNEL_NAME=/home/bart/workspace/uc/nano/gpt_ufs_mfsroot/kernels/amd64/NANO
 #KERNEL_MAKE=
 #KERNEL_MAKE="-DKERNFAST" 
 KERNEL_MAKE="-DNO_KERNELCLEAN"
 #KERNEL_MODULES=
-KERNEL_MODULES="msdosfs cd9660 opensolaris zfs \
+KERNEL_MODULES="msdosfs cd9660 opensolaris zfs tmpfs \
 	 linux ppc ppbus ppi vesa pf pflog pfsync \
-	 wlan_wep wlan_ccmp wlan_tkip wlan_amrr wlan_xauth ath"
+	 wlan_wep wlan_ccmp wlan_tkip wlan_amrr wlan_acl \
+	 wlan_rssadapt wlan_xauth ath ath_pci \
+	 if_vlan if_tun if_gif if_faith if_bridge bridgestp"
 #
 # system configuration
 # 
-SYSTEM_TARGET=i386
+SYSTEM_TARGET=amd64
 SYSTEM_PKGROOT="http://ftp.cz.freebsd.org"
 SYSTEM_RELEASE="packages-9-current"
 #SYSTEM_PACKAGES="hal dbus xorg-minimal xf86-video-vesa xf86-input-mouse \
