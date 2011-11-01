@@ -14,7 +14,7 @@ KERNEL_MODULES=
 #
 # system configuration
 # 
-SYSTEM_TARGET=i386
+SYSTEM_TARGET=amd64
 SYSTEM_PKGROOT="http://ftp.cz.freebsd.org"
 SYSTEM_RELEASE="packages-9-current"
 #SYSTEM_PACKAGES="hal dbus xorg-minimal xf86-video-vesa xf86-input-mouse \
