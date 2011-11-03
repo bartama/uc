@@ -221,7 +221,7 @@ _prepare_img_() # {{{
    [ $# -ge 4 ] || return 1
    #
 	SRC=$1
-   DEV=$($MDC -a -f $1)
+   DEV=$($MDC -a -f $2)
    shift 2
    _prepare_ $SRC $DEV $*
    $MDC -d -u $DEV
@@ -352,6 +352,9 @@ _prepare_gpt_ufs_() # {{{
    #
    _prepare_gpt_ $SRC $DEV || return 1
    #
+	# usr partition
+   $GPART add -t freebsd-ufs -s 768M $DEV || return 1
+	# home partition
    $GPART add -t freebsd-ufs $DEV || return 1
    #
    # install bootcode
@@ -606,8 +609,9 @@ _install_mfsroot_ () # {{{
       [ -e $DST/boot/kernel/kernel ] && rm -f ${DST}/boot/kernel/kernel
      #
      # usr
-     _copy_ $SRC/usr $DST/usr 'include' 'src' 'example*' 'man' 'nls' 'info'\
-			'i18n' 'doc' 'locale' 'calendar' 'groff_font' 'mk' \
+     _copy_ $SRC/usr $DST/usr 'include' 'src' 'example*' 'man' 'nls' 'info' \
+			'i18n' 'doc' 'locale' 'calendar' 'groff_font' 'mk' 'aclocal' \
+			'share/emacs' 'share/gettext' 'gtk-doc' 'licenses' \
 			'pc-sysinstall' 'snmp/' 'tmac/' 
    fi
 	rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/boot/ $DST/boot
