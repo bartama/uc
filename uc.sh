@@ -136,6 +136,7 @@ where OPTIONS := {
          i  SRC DST CFG_DIR {OPTS}    // install plain system and configuration
             OPTS := { nocfg }
          im SRC_DIR DST_DIR CFG_DIR   // install boot, mfsroot and usr
+         il SRC_DIR DST_DIR CFG_DIR   // install /usr/local
          ip DEST_DIR                  // install packages
          ch NANO_DIR                  // chroot to nano installation
       }
@@ -179,7 +180,12 @@ _prepare_() # {{{
    #
    SRC=$1 ; PS=$2 ; FS=$3 ; DEV=$4
    shift 4
-   [ -e $DEV -a -f $DEV ] && IMG=$($MDC -a -f $DEV) && DEV=$IMG
+   if [ -e $DEV -a -f $DEV ]
+   then
+      IMG=$($MDC -a -f $DEV) ; DEV=$IMG
+   else
+      DEV=$(basename $DEV)
+   fi
    eval "_prepare_${PS}_${FS}_ $SRC $DEV $*"
    sync
    sleep 1
@@ -577,6 +583,7 @@ _install_mfsroot_ () # {{{
    rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/boot/ $DST/boot
    [ -d $CFG/usr ] && rsync -avzKO --no-owner --no-group --exclude '*~' \
       $CFG/usr/ $DST/usr
+   # install usr/local
    #
    ##### create mfsroot #####
    #
@@ -631,6 +638,35 @@ _install_mfsroot_ () # {{{
    $MDC -d -u $MDEV
    $ZIP -9 -c $MFS > $DST/boot/mfsroot.gz
    return 0
+} # }}}
+
+###############################################################################
+_install_local_ () # {{{
+{
+   local DST SRC CFG MFS ERU MDEV ALL UPCFG
+   # parameters
+   # $1 - source dir
+   # $2 - target dir
+   # $3 - CFG directory 
+   [ $# -eq 3 ] || return 1
+   #
+   SRC=$1
+   DST=$2
+   CFG=$3
+   UPCFG=
+   [ -d $SRC ] && [ -d $CFG ] && [ -d $DST ] || exit 1
+   #
+   # install  usr/local
+  _copy_ $SRC/usr/local $DST/local 'local/*' 'include' 'src' 'example*' \
+      'man' 'nls' 'info' 'i18n' 'doc' 'locale' 'calendar' 'groff_font' 'mk' \
+      'aclocal' 'share/emacs' 'share/gettext' 'gtk-doc' 'licenses' \
+      'pc-sysinstall' 'snmp' 'share/tmac' 'share/games' 
+
+   [ -d $CFG/usr/local ] && rsync -avzKO --no-owner --no-group --exclude '*~' \
+      $CFG/usr/local $DST/local
+   #
+   return 0
+
 } # }}}
 
 ###############################################################################
@@ -765,6 +801,7 @@ _main_() # {{{
       ik)   _install_kernel_    $1 $KTARGET $KNAME $KMOD ;;
       iw)   _install_world_     $STARGET              $* ;;
       im)   _install_mfsroot_                         $* ;; 
+      il)   _install_local_                           $* ;;
       i)    _install_                                 $* ;; 
       ip)   _install_packages_  $1 $STARGET $PROOT $PREL $PKGS ;;
       ch)   _chroot_to_                               $* ;;
@@ -811,10 +848,18 @@ then
             fi
             shift 2 
             ;;
-         --pps) [ $2 = gpt -o $2 = mbr ] && IMG_PS=$2 ; shift 2 ;;
-         --pfs) [ $2 = ufs -o $2 = zfs ] && IMG_FS=$2 ; shift 2 ;;
-         --pzp) IMG_ZP=$2 ; shift 2 ;;
-         --psrc) IMG_SRC=$2 ; shift 2 ;;
+         --pps=*) 
+            IMG_PS=${1#*=}
+            [ $IMG_PS = gpt -o $IMG_PS = mbr ] || IMG_PS=gpt
+            shift
+            ;;
+         --pfs=*) 
+            IMG_PS=${1#*=}
+            [ $IMG_PS = ufs -o $IMG_FS = zfs ] || IMG_FS=ufs
+            shift
+            ;;
+         --pzp=*) IMG_ZP=${1#*=} ; shift ;;
+         --psrc=*) IMG_SRC=${1#*=} ; shift ;;
          *) echo "Unknown option $1" ; break ;;
       esac
    done
