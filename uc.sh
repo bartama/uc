@@ -29,19 +29,26 @@ CFG_FILE=
 ROOT_DIR=$PWD
 WORK_DIR=/tmp
 
+IMG_PS=gpt
+IMG_FS=ufs
+IMG_ZP=znano
+IMG_SRC=/
+
+. ./functions.sh
+
 ###############################################################################
 _init_() # {{{ 
 {
-	return 0
+   return 0
 } # }}}
 
 ###############################################################################
-_mount_image_() # {{{
+_mount_() # {{{
 {
    local IMG TYPE PART DEV
    PART=
    # 
-   # $1 - disk image
+   # $1 - disk image or block device
    # $2 - fstype = ufs | zfs
    # $3 - partition name for ufs
    #      pool name for zfs
@@ -50,15 +57,11 @@ _mount_image_() # {{{
    IMG=$1
    TYPE=$( _upper_ $2 )
    PART=$3
-   
-   [ -f $IMG ] || return 1
-   case $TYPE in
-      UFS|ZFS) break ;;
-      *) return 1 ;;
-   esac
-   [ x$PART != x ] || return 1
+   # basic checks
+   [ -e $IMG ] && [ $TYPE = UFS -o $TYPE = ZFS ] && [ x$PART != x ] || return 1
    #
-   DEV=$($MDC -a -f $IMG)
+   # device 
+   [ -f $IMG ] && DEV=$($MDC -a -f $IMG) || DEV=$(basename $IMG)
    [ $? -eq 0 ] || return 1
    #
    sleep 1
@@ -67,9 +70,13 @@ _mount_image_() # {{{
          [ -d $WORK_DIR/$DEV ] || mkdir $WORK_DIR/$DEV
          #
          $MOUNT /dev/${DEV}$PART $WORK_DIR/$DEV
-         [ $? -eq 1 ] && $MDC -d -u $DEV && return 1
+         if [ $? -eq 1 ]
+         then 
+            $MDC -lv | grep $DEV && $MDC -d -u $DEV
+            return 1
+         fi
          #
-         echo "Image \"${IMG}:${PART}\" mounted in \"$WORK_DIR/$DEV\""
+         echo "\"${IMG}:${PART}\" mounted in \"$WORK_DIR/$DEV\""
          ;;
       ZFS)
          zpool import $PART
@@ -80,7 +87,7 @@ _mount_image_() # {{{
 } # }}}
 
 ###############################################################################
-_umount_image_() # {{{
+_umount_() # {{{
 {
    local PART DEV
    # 
@@ -115,59 +122,25 @@ where OPTIONS := {
       CMD     := { 
          m  IMG_FILE TYPE NAME        // mount partition/pool from image 
             TYPE := { ufs | zfs }
-         u  DEV        // umount 
-         p  SRC_DIR DEV PS FS { ARGS }// prepare disk 
-         pi SRC_DIR IMG PS FS { ARGS }// prepare disk image
-            PS := { mbr | gpt }
-            FS := { ufs | zfs }
-            ARGS := { POOL_NAME }
+         u  DEV                       // umount 
+         p  { ARGS } [ DEV | IMG ]   // prepare disk or image file
+            ARGS := { --pps=PS [mbr|gpt default=gpt]   |
+                      --pfs=FS [ufs|zfs default=ufs]   |
+                      --pzp=ZPOOL_NAME [default=znano] |
+                      --psrc=SRC_DIR [default=/]}
          ci IMG_FILE SIZE             // create disk image
          bk                           // build kernel
          bw                           // build world
          ik DEST_DIR                  // install kernel
          iw DEST_DIR                  // install world
          i  SRC DST CFG_DIR {OPTS}    // install plain system and configuration
-			   OPTS := { nocfg }
+            OPTS := { nocfg }
          im SRC_DIR DST_DIR CFG_DIR   // install boot, mfsroot and usr
          ip DEST_DIR                  // install packages
          ch NANO_DIR                  // chroot to nano installation
       }
 EOF
 } #}}}
-
-###############################################################################
-_upper_() # {{{
-{
-   [ $# -gt 0 ] || return 1
-   echo $* | tr '[:lower:]' '[:upper:]'
-   return 0
-} # }}}
-
-###############################################################################
-_copy_() # {{{
-{
-   local SRC DST EXFILE COUNT
-   #
-   # copy directory using tar 
-   # $1 - source directory
-   # $2 - destination directory
-   # $3,..,$n - exclude patterns
-   [ $# -ge 2 ] || return 1
-   SRC=$1 ; DST=$2 ; shift 2
-   EXFILE=$WORK_DIR/exclude.$$
-
-   [ -d $SRC ] || return 1
-   [ -d $DST ] || mkdir -p $DST
-
-   echo '*~' > $EXFILE
-   for i in $* ; do
-      [ "$i"x != x ] && echo $i/ >> $EXFILE
-   done
-   
-   rsync -avz --exclude-from=$EXFILE $SRC/ $DST
-   [ -f $WORK_DIR/exclude.$$ ] && rm -f $WORK_DIR/exclude.$$ 
-   return 0
-} # }}}
 
 ###############################################################################
 _create_image_() # {{{
@@ -195,43 +168,29 @@ _create_image_() # {{{
 ###############################################################################
 _prepare_() # {{{
 {
-   local SRC DEV PS FS 
+   local SRC DEV PS FS IMG
    # prepare target disk image
-	# $1 - source directory with boot directory
-   # $2 - disk device 
-   # $3 - type of partition scheme: mbr, gpt
-	# $4 - type of file system: ufs, zfs
-   # $5, ... optional arguments
+   # $1 - src directory
+   # $2 - type of partition scheme: mbr, gpt
+   # $3 - type of file system: ufs, zfs
+   # $4 - disk device or image file name
+   # $5, ..., $n optional arguments
    [ $# -ge 4 ] || return 1
    #
-   SRC=$1 ; DEV=$2 ; PS=$3 ; FS=$4
+   SRC=$1 ; PS=$2 ; FS=$3 ; DEV=$4
    shift 4
+   [ -e $DEV -a -f $DEV ] && IMG=$($MDC -a -f $DEV) && DEV=$IMG
    eval "_prepare_${PS}_${FS}_ $SRC $DEV $*"
-} #}}}
-
-###############################################################################
-_prepare_img_() # {{{
-{
-   local SRC DEV 
-   # prepare target disk image
-	# $1 - source directory with boot directory
-   # $2 - disk device image
-   # $3 - type of partition scheme: mbr, gpt
-	# $4 - type of file system: ufs, zfs
-   [ $# -ge 4 ] || return 1
-   #
-	SRC=$1
-   DEV=$($MDC -a -f $2)
-   shift 2
-   _prepare_ $SRC $DEV $*
-   $MDC -d -u $DEV
+   sync
+   sleep 1
+   [ -n $IMG ] && $($MDC -d -u $IMG)
 } #}}}
 
 ###############################################################################
 _prepare_mbr_old_() # {{{
 {
    local DEV
-	# it is OBSOLETE now
+   # it is OBSOLETE now
    # prepare target disk image as MBR 
    # $1 - disk device
    [ $# -eq 1 ] || return 1
@@ -265,9 +224,9 @@ _prepare_mbr_old_() # {{{
 _prepare_mbr_ufs() # {{{
 {
    local SRC DEV
-	# It is OBSOLETE now
+   # It is OBSOLETE now
    # prepare target disk image as MBR 
-	# $1 - source directory with boot directory
+   # $1 - source directory with boot directory
    # $2 - disk device
    [ $# -eq 2 ] || return 1
    #
@@ -301,7 +260,7 @@ _prepare_mbr_() # {{{
 {
    local SRC DEV
    # prepare target disk image
-	# $1 - source directory with boot directory
+   # $1 - source directory with boot directory
    # $2 - disk device
    [ $# -eq 2 ] || return 1
    SRC=$1 ; DEV=$2
@@ -323,7 +282,7 @@ _prepare_gpt_() # {{{
 {
    local SRC DEV
    # prepare target disk image as GPT
-	# $1 - source directory with boot directory
+   # $1 - source directory with boot directory
    # $2 - disk device
    [ $# -eq 2 ] || return 1
    SRC=$1 ; DEV=$2
@@ -345,22 +304,23 @@ _prepare_gpt_ufs_() # {{{
 {
    local SRC DEV
    # prepare target disk image
-	# $1 - source directory with boot directory
+   # $1 - source directory with boot directory
    # $2 - disk device
    [ $# -eq 2 ] || return 1
    SRC=$1 ; DEV=$2
    #
    _prepare_gpt_ $SRC $DEV || return 1
    #
-	# usr partition
-   $GPART add -t freebsd-ufs -s 768M $DEV || return 1
-	# home partition
-   $GPART add -t freebsd-ufs $DEV || return 1
+   # usr partition
+   $GPART add -t freebsd-ufs -l USR -s 348M $DEV || return 1
+   # home partition
+   $GPART add -t freebsd-ufs -l LOCAL $DEV || return 1
    #
    # install bootcode
    $GPART bootcode -p $SRC/boot/gptboot -i 1 $DEV || return 1
    #
-   $NEWFS -O2 -U /dev/${DEV}p2 || return 1
+   $NEWFS -O1 /dev/${DEV}p2 || return 1
+   $NEWFS -O2 -U /dev/${DEV}p3 || return 1
    return 0
 } #}}}
 
@@ -369,7 +329,7 @@ _prepare_gpt_zfs_() # {{{
 {
    local SRC DEV POOL
    # parameters
-	# $1 - source directory with boot directory
+   # $1 - source directory with boot directory
    # $2 - device name to work on
    # $3 - pool name 
    #
@@ -387,8 +347,8 @@ _prepare_gpt_zfs_() # {{{
    # create pool
    $ZPOOL create $POOL /dev/${DEV}p2
    $ZPOOL set bootfs=$POOL $POOL
-	#
-	_finish_zfs_ $POOL
+   #
+   _finish_zfs_ $POOL
    # export pool
    sleep 3
    $ZPOOL export $POOL
@@ -399,7 +359,7 @@ _prepare_mbr_zfs_() # {{{
 {
    local SRC DEV POOL
    # parameters
-	# $1 - source directory with boot directory
+   # $1 - source directory with boot directory
    # $2 - device name to work on
    # $3 - pool name 
    #
@@ -411,22 +371,22 @@ _prepare_mbr_zfs_() # {{{
    # 
    $GPART add -t freebsd-zfs ${DEV}s1 || return 1
    #
-	# Install the boot1 stage
-	dd if=$SRC/boot/zfsboot of=/dev/${DEV}s1 count=1
-	#
+   # Install the boot1 stage
+   dd if=$SRC/boot/zfsboot of=/dev/${DEV}s1 count=1
+   #
    # create pool
    $ZPOOL create $POOL /dev/${DEV}s1a || return 1
    $ZPOOL set bootfs=$POOL $POOL
-	#
-	_finish_zfs_ $POOL
+   #
+   _finish_zfs_ $POOL
    # export pool
    sleep 3
    $ZPOOL export $POOL
-	#
-	#Install the boot2 zfs stage
-	dd if=$SRC/boot/zfsboot of=/dev/${DEV}s1a skip=1 seek=1024
    #
-	return 0
+   #Install the boot2 zfs stage
+   dd if=$SRC/boot/zfsboot of=/dev/${DEV}s1a skip=1 seek=1024
+   #
+   return 0
 } # }}}
 
 ###############################################################################
@@ -434,7 +394,7 @@ _prepare_mbr_ufs_() # {{{
 {
    local SRC DEV 
    # parameters
-	# $1 - source directory with boot directory
+   # $1 - source directory with boot directory
    # $2 - device name to work on
    #
    #
@@ -450,20 +410,20 @@ _prepare_mbr_ufs_() # {{{
    #
    $NEWFS -O2 -U /dev/${DEV}s1a || return 1
    #
-	return 0
+   return 0
 } # }}}
 
 ###############################################################################
 _finish_zfs_() # {{{
 {
-	local POOL
-	# 
-	# finish creation of zfs filesystem
-	# parameters
-	# $1 - pool name
+   local POOL
+   # 
+   # finish creation of zfs filesystem
+   # parameters
+   # $1 - pool name
    #
-	[ $# -eq 1 ] || return 1
-	#
+   [ $# -eq 1 ] || return 1
+   #
    # create ZFS filesystem
    $ZFS set checksum=fletcher4 $POOL
    $ZFS create $POOL/usr
@@ -478,7 +438,7 @@ _finish_zfs_() # {{{
    #
    [ -d /$POOL/boot/zfs ] || mkdir -p /$POOL/boot/zfs
    cp /boot/zfs/zpool.cache /$POOL/boot/zfs/zpool.cache
-	#
+   #
    return 0
 } #}}}
 
@@ -609,14 +569,14 @@ _install_mfsroot_ () # {{{
       [ -e $DST/boot/kernel/kernel ] && rm -f ${DST}/boot/kernel/kernel
      #
      # usr
-     _copy_ $SRC/usr $DST/usr 'include' 'src' 'example*' 'man' 'nls' 'info' \
-			'i18n' 'doc' 'locale' 'calendar' 'groff_font' 'mk' 'aclocal' \
-			'share/emacs' 'share/gettext' 'gtk-doc' 'licenses' \
-			'pc-sysinstall' 'snmp/' 'tmac/' 
+     _copy_ $SRC/usr $DST/usr 'local/*' 'include' 'src' 'example*' 'man' 'nls' \
+         'info' 'i18n' 'doc' 'locale' 'calendar' 'groff_font' 'mk' 'aclocal' \
+         'share/emacs' 'share/gettext' 'gtk-doc' 'licenses' \
+         'pc-sysinstall' 'snmp' 'share/tmac' 'share/games' 
    fi
-	rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/boot/ $DST/boot
-	[ -d $CFG/usr ] && rsync -avzKO --no-owner --no-group --exclude '*~' \
-		$CFG/usr/ $DST/usr
+   rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/boot/ $DST/boot
+   [ -d $CFG/usr ] && rsync -avzKO --no-owner --no-group --exclude '*~' \
+      $CFG/usr/ $DST/usr
    #
    ##### create mfsroot #####
    #
@@ -651,20 +611,20 @@ _install_mfsroot_ () # {{{
    #
    # install mfsroot
    if [ -z $UPCFG ] ; then
-      _copy_ $SRC $WORK_DIR/$MDEV 'boot' 'mnt' 'rescue' 'usr' 'var' 'tmp'
+      _copy_ $SRC $WORK_DIR/$MDEV 'boot/*' 'mnt/*' 'rescue/*' 'usr/*' 'var/*' 'tmp'
       #
       # install configuration
-      for i in "usb" "var" "usr" "boot" ; do
+      for i in "usb" ; do
          [ -d $WORK_DIR/$MDEV/$i ] || mkdir $WORK_DIR/$MDEV/$i
       done
       cd $WORK_DIR/$MDEV
-      rm -fr tmp ; ln -s var/tmp tmp
+      ln -s var/tmp tmp
       [ -e home ] || ln -s usr/home home
       cd -
    fi
    #
    # copy etc into mfsroot
-	rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/etc/ $WORK_DIR/$MDEV/etc
+   rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/etc/ $WORK_DIR/$MDEV/etc
    #
    sync
    $UMOUNT $WORK_DIR/$MDEV
@@ -681,12 +641,12 @@ _install_ () # {{{
    # $1 - source dir
    # $2 - target dir
    # $3 - CFG directory 
-	# $4, ..., $n - optional switches
+   # $4, ..., $n - optional switches
    [ $# -ge 3 ] || return 1
    #
    SRC=$1 ; DST=$2 ; CFG=$3
-	shift 3
-	OPT="$*"
+   shift 3
+   OPT="$*"
    #
    [ -d $SRC ] && [ -d $CFG ] || exit 1
    [ -d $DST ] || mkdir -p $DST
@@ -708,56 +668,18 @@ _install_ () # {{{
    done
    #
    # copy configuration
-	if ! $(echo "$OPT" | grep -q 'nocfg')
-	then
-		rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/boot/ $DST/boot
-		rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/etc/ $DST/etc
-		[ -d $CFG/usr ] && rsync -avzKO --no-owner --no-group --exclude '*~' \
-			$CFG/usr/ $DST/usr
-	fi
+   if ! $(echo "$OPT" | grep -q 'nocfg')
+   then
+      rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/boot/ $DST/boot
+      rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/etc/ $DST/etc
+      [ -d $CFG/usr ] && rsync -avzKO --no-owner --no-group --exclude '*~' \
+         $CFG/usr/ $DST/usr
+   fi
    cd $DST
    rm -fr tmp ; ln -s var/tmp tmp
    [ -e home ] || ln -s usr/home home
    cd -
    #
-   return 0
-} # }}}
-
-###############################################################################
-_install_packages_() # {{{
-{
-   local CHROOT ARCH PKGROOT PKGREL PPROXY
-   #
-   # install base packages
-   # $1 - root directory to install to
-   # $2 - architecture
-   # $3 - packages root
-   # $4 - packages release
-   # $2, .., $n - packages
-
-   [ $# -ge 5 ] || return 1
-   CHROOT=$1
-   ARCH=$2
-   PKGROOT=$3
-   PKGREL=$4
-   shift 4
-   [ "$PROXY"x != x ] && PPROXY="HTTP_PROXY=$PROXY"
-   #
-   # copy resolv.conf into chrooted directory
-   [ -f /etc/resolv.conf ] && cp /etc/resolv.conf $CHROOT/etc/resolv.conf
-
-   for pkg in "$@" ; do
-      $TSOCKS env \
-         PACKAGESITE=$PKGROOT/pub/FreeBSD/ports/$ARCH/$PKGREL/Latest/ \
-         $PPROXY pkg_add -r -C $CHROOT $pkg
-      sleep 1
-   done
-   #
-   # jdownloader
-   #
-   #$TSOCKS env $HTTP_PROXY fetch -o ${CHROOT}/usr/local/sbin/jd.sh \
-   #   http://212.117.163.148/jd.sh
-   #chmod +x ${CHROOT}/usr/local/sbin/jd.sh
    return 0
 } # }}}
 
@@ -794,10 +716,10 @@ _chroot_to_() #{{{
    # change root to
    chroot $CHROOT_DIR
    #
-	# sync
-	sync
-	#
-	sleep 10
+   # sync
+   sync
+   #
+   sleep 10
    # umount
    $UMOUNT $CHROOT_DIR/var
    $UMOUNT $CHROOT_DIR/usr
@@ -806,9 +728,9 @@ _chroot_to_() #{{{
    #
    # remove memory disk with mfsroot
    $MDC -d -u $MD
-	#
-	sleep 5
-	#
+   #
+   sleep 5
+   #
    # compress mfsroot back
    $ZIP -c -9 $MFSROOT > $SRC/boot/mfsroot.gz
    #
@@ -834,10 +756,9 @@ _main_() # {{{
    
    shift
    case "$CMD" in
-      m)    _mount_image_                             $* ;;
-      u)    _umount_image_                            $* ;;
-      p)    _prepare_                                 $* ;;
-      pi)   _prepare_img_                             $* ;;
+      m)    _mount_                             $* ;;
+      u)    _umount_                            $* ;;
+      p)    _prepare_ $IMG_SRC $IMG_PS $IMG_FS        $* ;;
       ci)   _create_image_                            $* ;;
       bk)   _build_kernel_      $KTARGET $KNAME $KMAKE   ;;
       bw)   _build_world_       $STARGET                 ;;
@@ -890,6 +811,10 @@ then
             fi
             shift 2 
             ;;
+         --pps) [ $2 = gpt -o $2 = mbr ] && IMG_PS=$2 ; shift 2 ;;
+         --pfs) [ $2 = ufs -o $2 = zfs ] && IMG_FS=$2 ; shift 2 ;;
+         --pzp) IMG_ZP=$2 ; shift 2 ;;
+         --psrc) IMG_SRC=$2 ; shift 2 ;;
          *) echo "Unknown option $1" ; break ;;
       esac
    done

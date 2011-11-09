@@ -18,22 +18,23 @@ KERNEL_MODULES="msdosfs cd9660 opensolaris zfs tmpfs \
 # 
 SYSTEM_TARGET=amd64
 SYSTEM_PKGROOT="http://ftp.cz.freebsd.org"
-SYSTEM_RELEASE="packages-9-current"
+SYSTEM_RELEASE="packages-9-stable"
 #SYSTEM_PACKAGES="hal dbus xorg-minimal xf86-video-vesa xf86-input-mouse 
 SYSTEM_PACKAGES="xorg-minimal xf86-video-vesa xf86-input-mouse \
   xf86-input-keyboard xf86-video-intel xorg-server xorg-fonts-100dpi \
   xorg-fonts-75dpi xorg-fonts-truetype xorg-fonts-type1 \
   xkbcomp sterm \
-  screen"
+  screen vim-lite \
+  py27-pycrypto py27-curl tesseract spidermonkey"
 
 #SYSTEM_PACKAGES=screen
 #
 # jails configuration
 #
-JAIL_ENABLE="ns www dhcp mail"
+JAIL_ENABLE="ns www dhcp"
 JAIL_CFG=
 JAIL_NS_PKG=
-JAIL_WWW_PKG="nginx python27 zodb-py27"
 JAIL_DHCP_PKG="isc-dhcp42-server"
+JAIL_WWW_PKG="nginx python27 zodb-py27"
 JAIL_MAIL_PKG=
 JAIL_DB_PKG="mongodb"

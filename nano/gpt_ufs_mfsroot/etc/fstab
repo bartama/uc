@@ -1,5 +1,6 @@
-/dev/md0       /	   ufs	    rw	     0	   0
-/dev/da0p2     /usb	   ufs      ro	     2     0
-/usb/boot      /boot	   nullfs   ro	     2	   0
-/usb/usr       /usr	   nullfs   ro	     2	   0
-/dev/da0p3     /usr/home   ufs      rw	     2     0
+/dev/md0        /          ufs      rw       0     0
+/dev/da0p2      /usb       ufs      ro       2     0
+/usb/boot       /boot      nullfs   ro       2     0
+/usb/usr        /usr       nullfs   ro       2     0
+/dev/da0p3      /usr/home  ufs      rw       2     0
+/usr/home/local /usr/local nullfs   rw       2     0
