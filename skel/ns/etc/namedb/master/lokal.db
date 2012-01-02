@@ -1,6 +1,6 @@
 $TTL 3600        ; 1 hour default TTL
 @    IN      SOA      ns.lokal. admin.lokal. (
-                                2006051501      ; Serial
+                                2011121601      ; Serial
                                 10800           ; Refresh
                                 3600            ; Retry
                                 604800          ; Expire
@@ -14,16 +14,17 @@ $TTL 3600        ; 1 hour default TTL
                 IN      MX 10   mx.lokal.
                 IN      MX 20   mail.lokal.
 
-                IN      A       192.168.1.254
+                IN      A       192.168.88.2
 
 ; Machine Names
 localhost       IN      A       127.0.0.1
+nano            IN      A       192.168.88.2
+mx              IN      A       192.168.88.2
+mail            IN      A       192.168.88.2
 ns              IN      A       192.168.88.3
 dhcp            IN      A       192.168.88.4
 www             IN      A       192.168.88.5
-mx              IN      A       192.168.88.2
-mail            IN      A       192.168.88.2
 gw              IN      A       192.168.88.254
+marthink        IN      A       192.168.88.100
 
 ; Aliases
-;www             IN      CNAME   lokal.

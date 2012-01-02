@@ -81,6 +81,6 @@ _install_packages_() # {{{
          $PPROXY pkg_add -r -C $CHROOT $PKG
    done
    sleep 1
-   [ -e $CHROOT/resolv.conf ] && rm -f $CHROOT/resolv.conf
+   [ -e $CHROOT/etc/resolv.conf ] && rm -f $CHROOT/etc/resolv.conf
    return 0
 } # }}}

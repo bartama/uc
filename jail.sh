@@ -155,10 +155,11 @@ _create_jail_() # {{{
    rsync -avzKO --no-owner --no-group --exclude '*~' $CFG/$NAME/ $TMP
    #
    #finalize jail
-   _copy_ ${TMP}_s $DST 'include' 'src' 'example*' 'man' 'nls' \
+   _copy_ ${TMP}_s $DST 'src' 'example*' 'man' 'nls' \
       'info' 'i18n' 'doc' 'locale' 'calendar' 'groff_font' 'mk' 'aclocal' \
       'share/emacs' 'share/gettext' 'gtk-doc' 'licenses' \
-      'pc-sysinstall' 'snmp' 'share/tmac' 'share/games' 
+      'pc-sysinstall' 'snmp' 'share/tmac' 'share/games' 'var/tmp/*' \
+      'var/db/pkg/*'
    # cleanup
    umount ${TMP}/usr/local
    umount ${TMP}/s
@@ -166,6 +167,11 @@ _create_jail_() # {{{
    umount $TMP/dev
    umount $TMP
    rm -fr ${TMP} ${TMP}_s
+   #
+   # finish
+   tar -C ${DST} -czf ${TMP}_rw.tar.gz etc root var
+   rm -fr ${DST}/etc ${DST}/root ${DST}/var
+   mv ${TMP}_rw.tar.gz ${DST}/../${NAME}.tar.gz
    return 0
 } # }}}
 
