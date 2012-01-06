@@ -1,3 +1,5 @@
-nano	       /	   zfs	 rw	     0	   0
-nano/usr       /usr	   zfs	 rw	     0	   0
-nano/usr/home  /usr/home   zfs	 rw	     0	   0
+data/usr/ports          /usr/ports        zfs   rw,late  0     0
+data/usr/src            /usr/src          zfs   rw,late  0     0
+data/var/db/pkg         /var/db/pkg       zfs   rw,late  0     0
+data/var/db/portsnap    /var/db/portsnap  zfs   rw,late  0     0
+

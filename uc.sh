@@ -345,13 +345,13 @@ _prepare_gpt_zfs_() # {{{
    #
    _prepare_gpt_ $SRC $DEV || return 1
    # 
-   $GPART add -t freebsd-zfs $DEV || return 1
+   $GPART add -t freebsd-zfs -l root $DEV || return 1
    #
    # install pmbr 
    $GPART bootcode -p $SRC/boot/gptzfsboot -i 1 $DEV || return 1
    #
    # create pool
-   $ZPOOL create $POOL /dev/${DEV}p2
+   $ZPOOL create $POOL /dev/gpt/root
    $ZPOOL set bootfs=$POOL $POOL
    #
    _finish_zfs_ $POOL
@@ -436,13 +436,17 @@ _finish_zfs_() # {{{
    $ZFS create $POOL/usr/home
    #
    # finalize
-   cd /$POOL 
+   cd /$POOL
+	mkdir -p -m 0755 usr/ports usr/src var
+	chown root:wheel usr/ports usr/src var
    ln -s usr/home home
-   mkdir var
    ln -s var/tmp tmp
    cd -
    #
-   [ -d /$POOL/boot/zfs ] || mkdir -p /$POOL/boot/zfs
+   if [ ! -d /$POOL/boot/zfs ] ; then
+		mkdir -p -m 0755 /$POOL/boot/zfs
+		chown root:wheel /$POOL/boot/zfs
+	fi
    cp /boot/zfs/zpool.cache /$POOL/boot/zfs/zpool.cache
    #
    return 0
@@ -688,20 +692,11 @@ _install_ () # {{{
    [ -d $DST ] || mkdir -p $DST
    #
    # copy root fs
-   _copy_ $SRC $DST 'usr' 'rescue' 'var' 'tmp'
+   _copy_ $SRC $DST 'usr/ports' 'usr/src' 'var' 'tmp'
    #
    # compress the kernel
    [ -e $DST/boot/kernel/kernel.gz ] || $ZIP -9 ${DST}/boot/kernel/kernel
    [ -e $DST/boot/kernel/kernel ] && rm -f ${DST}/boot/kernel/kernel
-   #
-   # copy usr
-   _copy_ $SRC/usr $DST/usr 'include' 'src' 'example*' 'man' 'nls' 'info'\
-      'i18n' 'doc' 'locale' 
-   #
-   # finish installation
-   for i in "var" "usr" "boot" ; do
-      [ ! -d $DST/$i ] && mkdir $DST/$i && chown root:wheel $DST/$i
-   done
    #
    # copy configuration
    if ! $(echo "$OPT" | grep -q 'nocfg')
@@ -711,10 +706,6 @@ _install_ () # {{{
       [ -d $CFG/usr ] && rsync -avzKO --no-owner --no-group --exclude '*~' \
          $CFG/usr/ $DST/usr
    fi
-   cd $DST
-   rm -fr tmp ; ln -s var/tmp tmp
-   [ -e home ] || ln -s usr/home home
-   cd -
    #
    return 0
 } # }}}
