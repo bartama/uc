@@ -178,6 +178,7 @@ _prepare_() # {{{
    # $5, ..., $n optional arguments
    [ $# -ge 4 ] || return 1
    #
+	IMG=
    SRC=$1 ; PS=$2 ; FS=$3 ; DEV=$4
    shift 4
    if [ -e $DEV -a -f $DEV ]
@@ -186,7 +187,7 @@ _prepare_() # {{{
    else
       DEV=$(basename $DEV)
    fi
-   eval "_prepare_${PS}_${FS}_ $SRC $DEV $*"
+   eval "_prepare_${PS}_${FS}_ $SRC $DEV $@"
    sync
    sleep 1
    [ -n $IMG ] && $($MDC -d -u $IMG)
@@ -351,7 +352,7 @@ _prepare_gpt_zfs_() # {{{
    $GPART bootcode -p $SRC/boot/gptzfsboot -i 1 $DEV || return 1
    #
    # create pool
-   $ZPOOL create $POOL /dev/gpt/root
+   $ZPOOL create $POOL /dev/${DEV}p2
    $ZPOOL set bootfs=$POOL $POOL
    #
    _finish_zfs_ $POOL
@@ -785,7 +786,7 @@ _main_() # {{{
    case "$CMD" in
       m)    _mount_                             $* ;;
       u)    _umount_                            $* ;;
-      p)    _prepare_ $IMG_SRC $IMG_PS $IMG_FS        $* ;;
+      p)    _prepare_ $IMG_SRC $IMG_PS $IMG_FS  $* $IMG_ZP ;;
       ci)   _create_image_                            $* ;;
       bk)   _build_kernel_      $KTARGET $KNAME $KMAKE   ;;
       bw)   _build_world_       $STARGET                 ;;
@@ -808,10 +809,11 @@ _main_() # {{{
 ###############################################################################
 ###############################################################################
 # Main {{{
+CMD= 
 if [ $# -gt 0 ]
 then
 # Parse options {{{
-   while [ "$(echo $1|cut -c1)" = "-" ] ; do
+   while [ $# -gt 0 ] ; do
 
       case "$1" in
          -h) _help_ ; break ;;
@@ -845,20 +847,20 @@ then
             shift
             ;;
          --pfs=*) 
-            IMG_PS=${1#*=}
-            [ $IMG_PS = ufs -o $IMG_FS = zfs ] || IMG_FS=ufs
+            IMG_FS=${1#*=}
+            [ $IMG_FS = ufs -o $IMG_FS = zfs ] || IMG_FS=ufs
             shift
             ;;
          --pzp=*) IMG_ZP=${1#*=} ; shift ;;
          --psrc=*) IMG_SRC=${1#*=} ; shift ;;
-         *) echo "Unknown option $1" ; break ;;
+         *) CMD="$CMD $1"; shift ;;
       esac
    done
 # }}}
 
    _init_
 
-   _main_ $@
+   _main_ $CMD
 fi
 # }}}
 # vim: set ai fdm=marker ts=3 sw=3 tw=80: #
